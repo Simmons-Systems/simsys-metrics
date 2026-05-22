@@ -4,17 +4,20 @@
   "description": "Drop-in Prometheus /metrics template for Node.js web apps (Express 5 + Bun/Hono + Next.js)",
   "license": "MIT",
   "author": "Avicennasis",
-  "main": "dist/index.js",
+  "main": "dist/cjs/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/cjs/index.js"
     },
     "./next/route": {
       "types": "./dist/adapters/next-route.d.ts",
-      "default": "./dist/adapters/next-route.js"
+      "import": "./dist/adapters/next-route.js",
+      "require": "./dist/cjs/adapters/next-route.js"
     }
   },
   "engines": {
@@ -27,7 +30,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && tsc -p tsconfig.cjs.json && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
     "test": "vitest run",
     "prepublishOnly": "npm run build && npm test"
   },

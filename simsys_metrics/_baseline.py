@@ -234,6 +234,101 @@ def track_job(job: str):
     return _Tracker()
 
 
+# -------- track_pool --------
+
+pool_active = make_gauge(
+    "simsys_pool_active",
+    "Number of active (checked-out) connections in a pool.",
+    labelnames=("service", "pool"),
+    multiprocess_mode="livesum" if _MULTIPROC else None,
+)
+
+pool_idle = make_gauge(
+    "simsys_pool_idle",
+    "Number of idle connections in a pool.",
+    labelnames=("service", "pool"),
+    multiprocess_mode="livesum" if _MULTIPROC else None,
+)
+
+pool_waiting = make_gauge(
+    "simsys_pool_waiting",
+    "Number of requests waiting for a pool connection.",
+    labelnames=("service", "pool"),
+    multiprocess_mode="livesum" if _MULTIPROC else None,
+)
+
+pool_max = make_gauge(
+    "simsys_pool_max",
+    "Maximum pool size.",
+    labelnames=("service", "pool"),
+    multiprocess_mode="livesum" if _MULTIPROC else None,
+)
+
+
+def track_pool(
+    name: str,
+    *,
+    active_fn: Callable[[], int],
+    idle_fn: Callable[[], int],
+    waiting_fn: Optional[Callable[[], int]] = None,
+    max_size: Optional[int] = None,
+    interval: float = 5.0,
+) -> threading.Thread:
+    """Poll pool stat callbacks every ``interval`` seconds and update gauges.
+
+    Returns the poller thread (daemon). Safe to ignore the return value.
+    """
+    if (
+        not isinstance(interval, (int, float))
+        or isinstance(interval, bool)
+        or not math.isfinite(interval)
+        or interval <= 0
+    ):
+        raise ValueError(
+            f"track_pool: interval must be a positive finite number of "
+            f"seconds, got {interval!r}"
+        )
+    service = get_service()
+
+    if max_size is not None:
+        pool_max.labels(service=service, pool=name).set(float(max_size))
+
+    seen_failure = False
+
+    def _loop() -> None:
+        nonlocal seen_failure
+        while True:
+            try:
+                pool_active.labels(service=service, pool=name).set(
+                    float(active_fn())
+                )
+                pool_idle.labels(service=service, pool=name).set(
+                    float(idle_fn())
+                )
+                if waiting_fn is not None:
+                    pool_waiting.labels(service=service, pool=name).set(
+                        float(waiting_fn())
+                    )
+            except Exception as exc:
+                if not seen_failure:
+                    _log.warning(
+                        "simsys-metrics: pool callback for %r raised %r; "
+                        "future failures will be silent.",
+                        name,
+                        exc,
+                    )
+                    seen_failure = True
+            time.sleep(interval)
+
+    t = threading.Thread(
+        target=_loop,
+        name=f"simsys-metrics-pool-{name}",
+        daemon=True,
+    )
+    t.start()
+    return t
+
+
 def _reset_for_tests() -> None:
     """Test-only: clear the process-wide service global.
 

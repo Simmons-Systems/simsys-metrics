@@ -57,6 +57,11 @@ type Metrics struct {
 	progressRatePerSecond                *prometheus.GaugeVec
 	progressEstimatedCompletionTimestamp *prometheus.GaugeVec
 
+	poolActive  *prometheus.GaugeVec
+	poolIdle    *prometheus.GaugeVec
+	poolWaiting *prometheus.GaugeVec
+	poolMax     *prometheus.GaugeVec
+
 	startedAt time.Time
 }
 
@@ -157,6 +162,26 @@ func Install(opts InstallOpts) (*Metrics, error) {
 		"simsys_progress_estimated_completion_timestamp",
 		"Estimated completion time as a Unix timestamp (0 when unknown).",
 		[]string{"service", "operation"},
+	)
+	m.poolActive = m.MakeGauge(
+		"simsys_pool_active",
+		"Number of active (checked-out) connections in a pool.",
+		[]string{"service", "pool"},
+	)
+	m.poolIdle = m.MakeGauge(
+		"simsys_pool_idle",
+		"Number of idle connections in a pool.",
+		[]string{"service", "pool"},
+	)
+	m.poolWaiting = m.MakeGauge(
+		"simsys_pool_waiting",
+		"Number of requests waiting for a pool connection.",
+		[]string{"service", "pool"},
+	)
+	m.poolMax = m.MakeGauge(
+		"simsys_pool_max",
+		"Maximum pool size.",
+		[]string{"service", "pool"},
 	)
 
 	// Custom process collector reading /proc/self. Idempotent on the same

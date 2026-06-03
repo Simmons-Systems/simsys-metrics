@@ -15,10 +15,12 @@
 
 export {
   trackQueue,
+  trackPool,
   trackJob,
   safeLabel,
   setService,
   type TrackQueueOpts,
+  type TrackPoolOpts,
   type JobTracker,
 } from "./baseline.js";
 

@@ -14,6 +14,7 @@ from typing import Optional
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ._baseline import _peek_service, set_service
+from ._registry import scrape_duration_seconds, scrape_errors_total
 from ._http import (
     http_request_duration_seconds,
     http_requests_total,
@@ -190,7 +191,17 @@ def install_flask(
 
         @app.route(metrics_path)
         def _simsys_metrics_view():
-            return FlaskResponse(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+            start = time.perf_counter()
+            try:
+                body = generate_latest()
+            except Exception:
+                scrape_errors_total.labels(service=service).inc()
+                raise
+            finally:
+                scrape_duration_seconds.labels(service=service).set(
+                    time.perf_counter() - start
+                )
+            return FlaskResponse(body, mimetype=CONTENT_TYPE_LATEST)
     except BaseException:
         # Roll back the sentinel so a retry can attempt a fresh install.
         # Caller still sees the original exception.

@@ -49,6 +49,8 @@ def test_flask_metrics_endpoint_has_all_baseline_metrics():
         "simsys_process_cpu_seconds_total",
         "simsys_process_memory_bytes",
         "simsys_process_open_fds",
+        "simsys_process_threads",
+        "simsys_runtime_gc_collections_total",
         "simsys_build_info",
     ):
         assert baseline in names or any(n.startswith(baseline) for n in names), (

@@ -62,6 +62,9 @@ type Metrics struct {
 	poolWaiting *prometheus.GaugeVec
 	poolMax     *prometheus.GaugeVec
 
+	scrapeErrors   *prometheus.CounterVec
+	scrapeDuration *prometheus.GaugeVec
+
 	startedAt time.Time
 }
 
@@ -184,6 +187,17 @@ func Install(opts InstallOpts) (*Metrics, error) {
 		[]string{"service", "pool"},
 	)
 
+	m.scrapeErrors = m.MakeCounter(
+		"simsys_scrape_errors_total",
+		"Errors encountered while generating the /metrics response.",
+		[]string{"service"},
+	)
+	m.scrapeDuration = m.MakeGauge(
+		"simsys_scrape_duration_seconds",
+		"Time taken to generate the /metrics response.",
+		[]string{"service"},
+	)
+
 	// Custom process collector reading /proc/self. Idempotent on the same
 	// registry: if Install was called before with this registry, reuse the
 	// existing collector rather than panicking on duplicate descriptors or
@@ -222,8 +236,16 @@ func (m *Metrics) Registry() *prometheus.Registry { return m.registry }
 // MetricsHandler returns an http.Handler that serves the prometheus text
 // exposition format from m's registry. Mount it at whatever path matches
 // MiddlewareOpts.MetricsPath (default "/metrics").
+//
+// The handler records simsys_scrape_duration_seconds on each scrape and
+// increments simsys_scrape_errors_total on gather failures.
 func (m *Metrics) MetricsHandler() http.Handler {
-	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{Registry: m.registry})
+	inner := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{Registry: m.registry})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		inner.ServeHTTP(w, r)
+		m.scrapeDuration.WithLabelValues(m.service).Set(time.Since(start).Seconds())
+	})
 }
 
 // HTTPBuckets is the shared HTTP latency histogram bucket schedule.

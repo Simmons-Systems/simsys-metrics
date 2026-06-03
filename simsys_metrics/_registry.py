@@ -90,6 +90,19 @@ def make_gauge(
     )
 
 
+scrape_duration_seconds = make_gauge(
+    "simsys_scrape_duration_seconds",
+    "Time taken to generate the /metrics response.",
+    labelnames=("service",),
+)
+
+scrape_errors_total = make_counter(
+    "simsys_scrape_errors_total",
+    "Errors encountered while generating the /metrics response.",
+    labelnames=("service",),
+)
+
+
 def make_histogram(
     name: str,
     documentation: str,

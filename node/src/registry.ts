@@ -44,6 +44,10 @@ interface SimsysRegistryState {
   progressRemaining: Gauge;
   progressRatePerSecond: Gauge;
   progressEstimatedCompletionTimestamp: Gauge;
+  poolActive: Gauge;
+  poolIdle: Gauge;
+  poolWaiting: Gauge;
+  poolMax: Gauge;
   defaultMetricsRegistered: boolean;
   warnedMissingService: Set<string>;
 }
@@ -126,6 +130,30 @@ function initRegistryState(): SimsysRegistryState {
       name: guardName("simsys_progress_estimated_completion_timestamp"),
       help: "Estimated completion time as a Unix timestamp (0 when unknown).",
       labelNames: ["service", "operation"],
+      registers: [reg],
+    }),
+    poolActive: new Gauge({
+      name: guardName("simsys_pool_active"),
+      help: "Number of active (checked-out) connections in a pool.",
+      labelNames: ["service", "pool"],
+      registers: [reg],
+    }),
+    poolIdle: new Gauge({
+      name: guardName("simsys_pool_idle"),
+      help: "Number of idle connections in a pool.",
+      labelNames: ["service", "pool"],
+      registers: [reg],
+    }),
+    poolWaiting: new Gauge({
+      name: guardName("simsys_pool_waiting"),
+      help: "Number of requests waiting for a pool connection.",
+      labelNames: ["service", "pool"],
+      registers: [reg],
+    }),
+    poolMax: new Gauge({
+      name: guardName("simsys_pool_max"),
+      help: "Maximum pool size.",
+      labelNames: ["service", "pool"],
       registers: [reg],
     }),
     defaultMetricsRegistered: false,
@@ -260,6 +288,13 @@ export const progressRemaining: Gauge = _state.progressRemaining;
 export const progressRatePerSecond: Gauge = _state.progressRatePerSecond;
 export const progressEstimatedCompletionTimestamp: Gauge =
   _state.progressEstimatedCompletionTimestamp;
+
+// -------- Pool tracking (opt-in) --------
+
+export const poolActive: Gauge = _state.poolActive;
+export const poolIdle: Gauge = _state.poolIdle;
+export const poolWaiting: Gauge = _state.poolWaiting;
+export const poolMax: Gauge = _state.poolMax;
 
 // -------- Default runtime metrics (opt-in wrapper) --------
 

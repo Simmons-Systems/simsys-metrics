@@ -79,9 +79,6 @@ func (m *Metrics) TrackQueue(ctx context.Context, name string, interval time.Dur
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						// Surface the first panic so misbehaving depthFns
-						// aren't silent. Subsequent panics stay quiet to
-						// avoid log floods on tight tickers.
 						if loggedPanic.CompareAndSwap(false, true) {
 							slog.Warn("simsys-metrics: TrackQueue depthFn panicked",
 								"queue", name, "service", m.service, "panic", r)
@@ -95,7 +92,70 @@ func (m *Metrics) TrackQueue(ctx context.Context, name string, interval time.Dur
 			}
 			m.queueDepth.WithLabelValues(m.service, name).Set(float64(depth))
 		}
-		// First tick immediately so the gauge is populated before the first scrape.
+		tick()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				tick()
+			}
+		}
+	}()
+	return stop
+}
+
+// -------- TrackPool --------
+
+// PoolOpts configures TrackPool.
+type PoolOpts struct {
+	ActiveFn  func() int
+	IdleFn    func() int
+	WaitingFn func() int // optional; nil to skip
+	Max       int        // 0 means unknown
+}
+
+// TrackPool starts a goroutine that polls pool stat callbacks every interval
+// and updates simsys_pool_* gauges. The returned stop function is idempotent;
+// callers MUST defer it to avoid goroutine leaks.
+func (m *Metrics) TrackPool(ctx context.Context, name string, interval time.Duration, opts PoolOpts) (stop func()) {
+	if interval <= 0 {
+		panic(fmt.Sprintf("simsys-metrics: TrackPool interval must be > 0, got %s", interval))
+	}
+	done := make(chan struct{})
+	var stopOnce sync.Once
+	stop = func() {
+		stopOnce.Do(func() { close(done) })
+	}
+
+	if opts.Max > 0 {
+		m.poolMax.WithLabelValues(m.service, name).Set(float64(opts.Max))
+	}
+
+	var loggedPanic atomic.Bool
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		tick := func() {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if loggedPanic.CompareAndSwap(false, true) {
+							slog.Warn("simsys-metrics: TrackPool callback panicked",
+								"pool", name, "service", m.service, "panic", r)
+						}
+					}
+				}()
+				m.poolActive.WithLabelValues(m.service, name).Set(float64(max(0, opts.ActiveFn())))
+				m.poolIdle.WithLabelValues(m.service, name).Set(float64(max(0, opts.IdleFn())))
+				if opts.WaitingFn != nil {
+					m.poolWaiting.WithLabelValues(m.service, name).Set(float64(max(0, opts.WaitingFn())))
+				}
+			}()
+		}
 		tick()
 		for {
 			select {

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ._baseline import get_service, set_service, track_job, track_queue
+from ._baseline import get_service, set_service, track_job, track_pool, track_queue
 from .helpers import safe_label
 from .progress import ProgressOpts, ProgressTracker, track_progress
 
@@ -28,6 +28,7 @@ __version__ = "0.3.8"
 __all__ = [
     "install",
     "track_job",
+    "track_pool",
     "track_queue",
     "track_progress",
     "ProgressOpts",

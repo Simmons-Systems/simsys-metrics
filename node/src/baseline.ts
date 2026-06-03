@@ -8,11 +8,20 @@
  * full rationale.
  */
 
-import { queueDepth, jobsTotal, jobDurationSeconds } from "./registry.js";
+import {
+  queueDepth,
+  jobsTotal,
+  jobDurationSeconds,
+  poolActive,
+  poolIdle,
+  poolWaiting,
+  poolMax,
+} from "./registry.js";
 
 interface SimsysBaselineState {
   service: string | null;
   queueTimers: NodeJS.Timeout[];
+  poolTimers: NodeJS.Timeout[];
 }
 
 declare global {
@@ -23,6 +32,7 @@ declare global {
 const _state: SimsysBaselineState = (globalThis.__simsysMetricsBaselineState ??= {
   service: null,
   queueTimers: [],
+  poolTimers: [],
 });
 
 export function setService(service: string | null): void {
@@ -192,6 +202,56 @@ export function trackJob(jobName: string): JobTracker {
   return tracker;
 }
 
+// -------- trackPool --------
+
+export interface TrackPoolOpts {
+  activeFn: () => number | Promise<number>;
+  idleFn: () => number | Promise<number>;
+  waitingFn?: () => number | Promise<number>;
+  max?: number;
+  intervalMs?: number;
+}
+
+export function trackPool(
+  name: string,
+  opts: TrackPoolOpts,
+): NodeJS.Timeout {
+  const service = getService();
+  const intervalMs = opts.intervalMs ?? 5000;
+  if (typeof intervalMs !== "number" || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+    throw new Error(
+      `trackPool: opts.intervalMs must be a positive finite number of milliseconds, got ${String(intervalMs)}`,
+    );
+  }
+
+  if (opts.max != null && opts.max > 0) {
+    poolMax.labels({ service, pool: name }).set(opts.max);
+  }
+
+  const tick = async () => {
+    try {
+      const active = Math.max(0, Math.trunc(Number(await opts.activeFn()) || 0));
+      const idle = Math.max(0, Math.trunc(Number(await opts.idleFn()) || 0));
+      poolActive.labels({ service, pool: name }).set(active);
+      poolIdle.labels({ service, pool: name }).set(idle);
+      if (opts.waitingFn) {
+        const waiting = Math.max(0, Math.trunc(Number(await opts.waitingFn()) || 0));
+        poolWaiting.labels({ service, pool: name }).set(waiting);
+      }
+    } catch {
+      /* swallow — misbehaving callbacks shouldn't crash the timer */
+    }
+  };
+
+  void tick();
+  const timer = setInterval(tick, intervalMs);
+  if (typeof timer.unref === "function") {
+    timer.unref();
+  }
+  _state.poolTimers.push(timer);
+  return timer;
+}
+
 // -------- safeLabel --------
 
 const OTHER = "other";
@@ -218,6 +278,10 @@ export function _resetForTests(): void {
   _state.service = null;
   while (_state.queueTimers.length) {
     const t = _state.queueTimers.pop();
+    if (t) clearInterval(t);
+  }
+  while (_state.poolTimers.length) {
+    const t = _state.poolTimers.pop();
     if (t) clearInterval(t);
   }
 }

@@ -38,13 +38,14 @@ def test_install_mounts_metrics_endpoint():
     text = r.text
 
     names = metric_names(text)
-    # All six baseline metric names must appear.
     for baseline in (
         "simsys_http_requests_total",
         "simsys_http_request_duration_seconds",
         "simsys_process_cpu_seconds_total",
         "simsys_process_memory_bytes",
         "simsys_process_open_fds",
+        "simsys_process_threads",
+        "simsys_runtime_gc_collections_total",
         "simsys_build_info",
     ):
         assert baseline in names or any(n.startswith(baseline) for n in names), (

@@ -15,6 +15,10 @@ func TestSimsysProcessCollectorEmitsBaseline(t *testing.T) {
 		`type="rss"`,
 		`type="vms"`,
 		"simsys_process_open_fds",
+		"simsys_process_threads",
+		"simsys_runtime_goroutines",
+		"simsys_runtime_gc_collections_total",
+		"simsys_runtime_gc_pause_total_seconds",
 	} {
 		if !strings.Contains(body, required) {
 			t.Errorf("missing %q in /metrics body:\n%s", required, body)

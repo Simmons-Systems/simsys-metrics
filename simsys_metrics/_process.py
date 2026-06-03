@@ -11,6 +11,8 @@ service reuses the existing collector.
 
 from __future__ import annotations
 
+import gc
+import threading
 from dataclasses import dataclass
 from threading import Lock
 from typing import Optional
@@ -55,7 +57,7 @@ class ProcessCollectorRollbackState:
 
 
 class SimsysProcessCollector:
-    """Emits simsys_process_cpu_seconds_total / memory_bytes / open_fds."""
+    """Emits simsys_process_* and simsys_runtime_* metrics."""
 
     def __init__(self, service: str) -> None:
         self._service = service
@@ -105,6 +107,30 @@ class SimsysProcessCollector:
         )
         fds_family.add_metric([self._service], num_fds)
         yield fds_family
+
+        # Thread count
+        threads_family = GaugeMetricFamily(
+            "simsys_process_threads",
+            "Number of active threads in the process.",
+            labels=["service"],
+        )
+        threads_family.add_metric([self._service], float(threading.active_count()))
+        yield threads_family
+
+        # GC collections per generation
+        gc_family = CounterMetricFamily(
+            "simsys_runtime_gc_collections_total",
+            "Total garbage collection runs since process start.",
+            labels=["service", "generation"],
+        )
+        try:
+            for i, stat in enumerate(gc.get_stats()):
+                gc_family.add_metric(
+                    [self._service, str(i)], float(stat["collections"])
+                )
+        except (KeyError, TypeError):
+            pass
+        yield gc_family
 
 
 def register_process_collector(

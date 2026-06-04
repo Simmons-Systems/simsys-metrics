@@ -299,12 +299,8 @@ def track_pool(
         nonlocal seen_failure
         while True:
             try:
-                pool_active.labels(service=service, pool=name).set(
-                    float(active_fn())
-                )
-                pool_idle.labels(service=service, pool=name).set(
-                    float(idle_fn())
-                )
+                pool_active.labels(service=service, pool=name).set(float(active_fn()))
+                pool_idle.labels(service=service, pool=name).set(float(idle_fn()))
                 if waiting_fn is not None:
                     pool_waiting.labels(service=service, pool=name).set(
                         float(waiting_fn())

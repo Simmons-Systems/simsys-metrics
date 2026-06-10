@@ -18,6 +18,13 @@
  * would create one Prometheus time series per slug, exhausting
  * Prometheus memory. Consumers can pass `routeTemplates` for
  * high-fidelity overrides on legitimate dynamic paths.
+ *
+ * Two more layers on top of bucketRoute() (infra#37576): 404 responses
+ * collapse to `/__unmatched__` (scanner wordlists are lowercase-wordish,
+ * which SAFE_TEXT_SEGMENT_RE keeps verbatim — the status code is the
+ * only reliable "this isn't a real route" signal), and distinct route
+ * labels are capped per process (default 300, `maxRoutes` option) with
+ * overflow recorded as `/__overflow__`.
  */
 
 import http from "node:http";
@@ -64,6 +71,12 @@ export interface NextInstallOpts {
   metricsPath?: string;
   /** Optional regex→template overrides for high-fidelity route labels. */
   routeTemplates?: RouteTemplate[];
+  /**
+   * Hard cap on distinct route label values minted per process; routes
+   * beyond it are recorded as `/__overflow__`. Bounds cardinality even
+   * when the app serves 2xx for arbitrary paths. Default 300.
+   */
+  maxRoutes?: number;
 }
 
 const NUMERIC_RE = /^\d+$/;
@@ -87,6 +100,43 @@ const UUID_RE =
 const SAFE_TEXT_SEGMENT_RE = /^[a-z][a-z.-]{0,31}$/;
 
 const MAX_PATH_LENGTH = 8192;
+
+// 404s collapse to one label. SAFE_TEXT_SEGMENT_RE keeps wordish
+// segments verbatim, and internet scanner wordlists (`/wp-login.php`,
+// `/abantecart/index.php`, …) are exactly wordish — on a public vhost
+// they mint thousands of route labels (infra#37576: ~8k routes / 14 MB
+// scrape body on bfr-leadership in 10 days). The Express adapter
+// already labels router-miss traffic `__unmatched__`; a 404 status is
+// the same fact observed after the fact, which is all the raw
+// http.Server patch has. Real-route 4xx (401/403 auth denials) keep
+// their route label.
+const UNMATCHED_ROUTE = "/__unmatched__";
+
+// Defense-in-depth behind the 404 collapse: a hard cap on distinct
+// route labels minted per process, for apps that 200 arbitrary paths
+// (catch-all routes). Sentinel labels can't collide with bucketRoute
+// output — `__` fails SAFE_TEXT_SEGMENT_RE, so attacker-supplied
+// `/__overflow__` buckets to `/:str`.
+const OVERFLOW_ROUTE = "/__overflow__";
+const DEFAULT_MAX_ROUTES = 300;
+
+/**
+ * Enforce the distinct-route cap. The seen-set lives on globalThis
+ * (the 0.4.2 chunk-split-safety pattern) so every module instance
+ * spends from the same budget.
+ */
+function capRoute(route: string, maxRoutes: number): string {
+  const seen = (globalThis.__simsysNextSeenRoutes ??= new Set<string>());
+  if (seen.has(route)) return route;
+  if (seen.size >= maxRoutes) return OVERFLOW_ROUTE;
+  seen.add(route);
+  return route;
+}
+
+/** Test hook: reset the distinct-route cap state. */
+export function _resetRouteCapForTests(): void {
+  globalThis.__simsysNextSeenRoutes = undefined;
+}
 
 /**
  * Pure function: turn a raw URL path into a bounded-cardinality route label.
@@ -166,6 +216,8 @@ declare global {
   // eslint-disable-next-line no-var
   var __simsysNextInstalled: boolean | undefined;
   // eslint-disable-next-line no-var
+  var __simsysNextSeenRoutes: Set<string> | undefined;
+  // eslint-disable-next-line no-var
   var __simsysNextOrigEmit:
     | ((this: http.Server, event: string | symbol, ...args: unknown[]) => boolean)
     | undefined;
@@ -210,6 +262,7 @@ export function installNext(opts: NextInstallOpts): void {
   const commit = opts.commit ?? detectCommit();
   const metricsPath = opts.metricsPath ?? "/api/metrics";
   const routeTemplates = opts.routeTemplates ?? [];
+  const maxRoutes = opts.maxRoutes ?? DEFAULT_MAX_ROUTES;
 
   // Snapshot every piece of state install is about to mutate, so partial
   // failure rolls back cleanly. Mirrors Express adapter discipline.
@@ -279,9 +332,12 @@ export function installNext(opts: NextInstallOpts): void {
         res.removeListener("finish", finalize);
         res.removeListener("close", finalize);
         const elapsed = Number(process.hrtime.bigint() - start) / 1e9;
-        const route = bucketRoute(url, routeTemplates);
         const method = normalizeMethod(req.method);
         const status = res.statusCode ?? 500;
+        const route =
+          status === 404
+            ? UNMATCHED_ROUTE
+            : capRoute(bucketRoute(url, routeTemplates), maxRoutes);
         try {
           httpRequestsTotal
             .labels({

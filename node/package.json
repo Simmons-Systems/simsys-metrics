@@ -1,6 +1,6 @@
 {
   "name": "@simsys/metrics",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "Drop-in Prometheus /metrics template for Node.js web apps (Express 5 + Bun/Hono + Next.js)",
   "license": "MIT",
   "author": "Avicennasis",

@@ -58,7 +58,7 @@ jobs:
         with:
           # Match go.mod's declared minimum (1.25); see comment on the
           # test job's matrix above.
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache-dependency-path: go/go.sum
 
       - name: Install staticcheck

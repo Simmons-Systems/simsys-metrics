@@ -5,11 +5,13 @@ import "strings"
 // StatusBucket returns the HTTP status class string ("1xx", "2xx", ..., "5xx")
 // for use as a bounded-cardinality label value.
 func StatusBucket(code int) string {
+	// ⚡ Bolt: Fast path checking 2xx first as it represents the vast majority
+	// of HTTP responses, avoiding unnecessary branch evaluations.
 	switch {
-	case code >= 100 && code < 200:
-		return "1xx"
 	case code >= 200 && code < 300:
 		return "2xx"
+	case code >= 100 && code < 200:
+		return "1xx"
 	case code >= 300 && code < 400:
 		return "3xx"
 	case code >= 400 && code < 500:

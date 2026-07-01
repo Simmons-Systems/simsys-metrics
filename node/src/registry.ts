@@ -240,12 +240,16 @@ export const httpRequestsTotal: Counter = _state.httpRequestsTotal;
 export const httpRequestDurationSeconds: Histogram = _state.httpRequestDurationSeconds;
 
 export function statusBucket(statusCode: number | string): string {
-  const code = typeof statusCode === "number" ? statusCode : Number(statusCode);
-  if (!Number.isFinite(code)) return "5xx";
-  if (code >= 100 && code < 200) return "1xx";
-  if (code >= 200 && code < 300) return "2xx";
-  if (code >= 300 && code < 400) return "3xx";
-  if (code >= 400 && code < 500) return "4xx";
+  let code = statusCode as number;
+  if (typeof code !== "number") {
+    code = Number(code);
+    if (!Number.isFinite(code)) return "5xx";
+  }
+  if (code >= 100 && code < 600) {
+    // ⚡ Bolt: Fast path for valid HTTP status codes using math operation
+    // rather than branching logic.
+    return Math.floor(code / 100) + "xx";
+  }
   return "5xx";
 }
 
@@ -267,6 +271,9 @@ const ALLOWED_METHODS: ReadonlySet<string> = new Set([
 
 export function normalizeMethod(method: unknown): string {
   if (typeof method !== "string") return "OTHER";
+  // ⚡ Bolt: Fast path avoids allocating a new uppercase string if the input
+  // method is already correctly capitalized and allowed.
+  if (ALLOWED_METHODS.has(method)) return method;
   const upper = method.toUpperCase();
   return ALLOWED_METHODS.has(upper) ? upper : "OTHER";
 }

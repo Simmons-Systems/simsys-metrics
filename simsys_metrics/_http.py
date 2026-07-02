@@ -24,19 +24,31 @@ http_request_duration_seconds = make_histogram(
 
 def status_bucket(status_code: int | str) -> str:
     """Map a raw HTTP status to its class string (``2xx`` / ``3xx`` / ...)."""
+    # ⚡ Bolt: Check strict int type before try/except block. Ordering 2xx before
+    # 1xx optimizes the most common valid path.
+    if type(status_code) is int:
+        if 200 <= status_code < 300:
+            return "2xx"
+        if 100 <= status_code < 200:
+            return "1xx"
+        if 300 <= status_code < 400:
+            return "3xx"
+        if 400 <= status_code < 500:
+            return "4xx"
+        return "5xx"
     try:
         code = int(status_code)
+        if 200 <= code < 300:
+            return "2xx"
+        if 100 <= code < 200:
+            return "1xx"
+        if 300 <= code < 400:
+            return "3xx"
+        if 400 <= code < 500:
+            return "4xx"
+        return "5xx"
     except (TypeError, ValueError):
         return "5xx"
-    if 100 <= code < 200:
-        return "1xx"
-    if 200 <= code < 300:
-        return "2xx"
-    if 300 <= code < 400:
-        return "3xx"
-    if 400 <= code < 500:
-        return "4xx"
-    return "5xx"
 
 
 # Allow-list of HTTP methods that get their own series. Anything outside
@@ -64,7 +76,11 @@ def normalize_method(method: object) -> str:
     Returns the method upper-cased if it is in the standard allow-list,
     else ``OTHER``. Non-string inputs also return ``OTHER`` defensively.
     """
-    if not isinstance(method, str):
-        return "OTHER"
-    upper = method.upper()
-    return upper if upper in _ALLOWED_METHODS else "OTHER"
+    if type(method) is str:
+        # ⚡ Bolt: Fast path avoids allocating a new uppercase string if the input
+        # method is already correctly capitalized and allowed.
+        if method in _ALLOWED_METHODS:
+            return method
+        upper = method.upper()
+        return upper if upper in _ALLOWED_METHODS else "OTHER"
+    return "OTHER"

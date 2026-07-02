@@ -79,5 +79,6 @@ should follow the same shape:
 
 ## Code of Conduct
 
-This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+This project follows the org-level
+[Contributor Covenant](https://github.com/Simmons-Systems/.github/blob/main/CODE_OF_CONDUCT.md).
 Be respectful; assume good faith.

@@ -26,7 +26,7 @@ Grafana dashboard works across every runtime:
 
 | Package | Path | Languages | Tag prefix | Install |
 |---------|------|-----------|------------|---------|
-| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `v<semver>` (e.g. `v0.3.8`) | `pip install ... @ git+https://...@v0.3.8` |
+| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v0.3.11`) | `pip install ... @ git+https://...@python-v0.3.11` |
 | [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v0.3.8`) | GitHub Release tarball URL |
 | [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v0.2.8`) | `go get ...@v0.2.8` |
 
@@ -330,7 +330,7 @@ cd simsys-metrics
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e '.[fastapi,flask,test]'
 
-pytest                           # 30 unit + integration tests
+pytest                           # 93 unit + integration tests
 bin/check-metrics-conformance.sh # end-to-end smoke test against the demo app
 ```
 
@@ -339,17 +339,18 @@ bin/check-metrics-conformance.sh # end-to-end smoke test against the demo app
 1. Bump `version` in `pyproject.toml` and `simsys_metrics/__init__.py`.
 2. Add a `CHANGELOG.md` entry.
 3. Run `pytest` and `bin/check-metrics-conformance.sh` — both must be green.
-4. `git tag vX.Y.Z && git push --tags`.
+4. `git tag python-vX.Y.Z && git push --tags`.
 5. Consumers re-pin their install URL to the new tag.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Issues and PRs welcome — bug reports,
 metric-catalogue gaps, or new framework install paths (Starlette, Quart, etc.)
-all fair game. Security issues: see [SECURITY.md](SECURITY.md).
+all fair game. Security issues: see the org-level
+[SECURITY.md](https://github.com/Simmons-Systems/.github/blob/main/SECURITY.md).
 
 By contributing you agree to the terms of the
-[Code of Conduct](CODE_OF_CONDUCT.md).
+[Code of Conduct](https://github.com/Simmons-Systems/.github/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -18,3 +18,6 @@ htmlcov/
 
 # Internal infrastructure topology — gitignored to avoid leaking deployment details
 DeployedApps.md
+
+# Feature Factory / stargazer context (local-only)
+.stargazer-*

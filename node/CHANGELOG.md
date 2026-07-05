@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-07-05 — Node only
+
+### Changed
+
+- **Engines floor raised: `node>=18` → `node>=20`.** Node 18 has been
+  end-of-life since April 2025, and the dev toolchain (vitest@4) already
+  required Node 20+ to run the test suite. With the floor at 20, CI's
+  Node 20 matrix lane exercises the floor directly, so the build-only
+  `build-node18` workflow job was removed. Consumers still on Node 18
+  should stay on `0.4.x`. No API or runtime behavior changes.
+
 ## [0.4.3] — 2026-04-29 (`node-v0.4.3`)
 
 ### Changed

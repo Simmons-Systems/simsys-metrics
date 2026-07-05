@@ -3,7 +3,7 @@
 > A drop-in Prometheus `/metrics` template for Node.js web apps — the Node.js sibling of [`simsys-metrics`](../) (Python), shipped from the same repo. One `install()` call; consistent metric catalogue; zero-per-app dashboard work.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node 18+](https://img.shields.io/badge/node-18+-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node 20+](https://img.shields.io/badge/node-20+-339933.svg?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![Express](https://img.shields.io/badge/Express-5-000000.svg?logo=express&logoColor=white)](https://expressjs.com/)
 [![Hono](https://img.shields.io/badge/Hono-4-E36002.svg?logo=hono&logoColor=white)](https://hono.dev/)
 

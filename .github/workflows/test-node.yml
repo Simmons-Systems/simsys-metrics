@@ -23,10 +23,10 @@ jobs:
         working-directory: node
     strategy:
       fail-fast: false
-      # Library's "engines" claim is node>=18 (no Node 20+ APIs used), but
-      # vitest@4 (dev dep) requires node>=20 to RUN the test suite. CI runs
-      # the suite on 20/22/24; the package itself still works on Node 18
-      # for consumers. The build-only job below verifies that explicitly.
+      # Library's "engines" claim is node>=20. The matrix's Node 20 lane
+      # runs the FULL suite on the floor, so no separate engines-floor
+      # job is needed (the old build-node18 job existed only because
+      # vitest@4 couldn't run on Node 18).
       matrix:
         node-version: ["20", "22", "24"]
 
@@ -50,28 +50,3 @@ jobs:
 
       - name: Pack tarball (smoke test)
         run: npm pack --dry-run
-
-  build-node18:
-    name: build-only (Node 18 — engines floor)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: node
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: node/package-lock.json
-
-      # vitest@4 won't run on Node 18 (it requires Node 20+), but the
-      # library itself uses no Node 20+ APIs. Verify the TypeScript build
-      # still succeeds on 18 so the "engines: node>=18" claim is enforced.
-      # `--ignore-scripts` skips prepublishOnly which would invoke vitest.
-      - name: Install dependencies (production-only)
-        run: npm ci --ignore-scripts
-
-      - name: TypeScript build (Node 18 floor)
-        run: npm run build

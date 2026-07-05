@@ -27,12 +27,14 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: .github/requirements/ci.txt
 
+      # Deps come from a uv-compiled, hash-pinned lockfile (Scorecard
+      # Pinned-Dependencies). The editable self-install is dep-free.
       - name: Install package with test extras
         run: |
-          python -m pip install --upgrade pip
-          pip install -e '.[fastapi,flask,test]'
+          pip install --require-hashes -r .github/requirements/ci.txt
+          pip install --no-deps -e .
 
       - name: Run pytest with coverage
         run: pytest -ra -v --cov=simsys_metrics --cov-report=xml --cov-report=term
@@ -58,7 +60,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.14"
-      - run: pip install ruff
+      - run: pip install --require-hashes -r .github/requirements/lint.txt
       - run: ruff check simsys_metrics tests
 
   pre-commit:

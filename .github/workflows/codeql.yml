@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: "0 6 * * 1"
 
+# Default-deny at the top level (Scorecard Token-Permissions); the
+# analyze job below re-grants exactly what CodeQL needs.
+permissions:
+  contents: read
+
 jobs:
   analyze:
     name: Analyze

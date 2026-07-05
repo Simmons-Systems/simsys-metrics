@@ -57,8 +57,9 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           # Match go.mod's declared minimum (1.25); see comment on the
-          # test job's matrix above.
-          go-version: "1.26.x"
+          # test job's matrix above. Deliberately NOT the latest minor —
+          # staticcheck must run against the floor toolchain.
+          go-version: "1.25.x"
           cache-dependency-path: go/go.sum
 
       - name: Install staticcheck

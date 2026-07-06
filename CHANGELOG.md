@@ -5,6 +5,41 @@ All notable changes to `simsys-metrics` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+Per-language detail for the Node package lives in
+[`node/CHANGELOG.md`](node/CHANGELOG.md); entries here are summaries.
+
+## [Unreleased]
+
+- **Go** — **BREAKING**: `TrackProgress` now returns
+  `(ProgressTracker, error)` instead of panicking on invalid opts
+  (empty Operation, negative Total/Window/Interval). Opts frequently
+  come from runtime config, so misconfiguration is now handleable.
+  Ships as `go/v0.3.0`. `Inc`/`SetTotal` still panic on negative
+  values (programmer error, not runtime input).
+- **Python** — `track_queue()`/`track_pool()` now return a
+  `PollerThread` with a cooperative `.stop()` (fixes daemon-thread
+  leak on orphaned trackers), and poll loops self-terminate once the
+  interpreter begins finalizing (no more user callbacks after
+  shutdown). Return type is a `threading.Thread` subclass — fully
+  backward compatible.
+
+## [0.5.0] — 2026-07-05 — Node only
+
+- Engines floor raised `node>=18` → `node>=20` (Node 18 EOL). The
+  `build-node18` CI job was removed — the Node 20 matrix lane exercises
+  the floor. No API or runtime behavior changes. Tag `node-v0.5.0`.
+
+## [0.4.4] — 2026-06-10 — Node only
+
+- Route cardinality hardening release. Tag `node-v0.4.4`; see
+  [`node/CHANGELOG.md`](node/CHANGELOG.md) for detail.
+
+## [0.3.11] — 2026-04-29 — Python only
+
+- Introduces the `python-vX.Y.Z` tag convention (first tag
+  `python-v0.3.11`); `__version__` synced to `0.3.11`. No functional
+  changes.
+
 ## 2026-04-29 — Repository transferred to `Simmons-Systems` org
 
 Coordinated migration release across all three languages. No functional
@@ -28,6 +63,17 @@ changes; metadata-only.
 - Repository transferred via GitHub native Transfer Ownership; the
   `Avicennasis/simsys-metrics` URL redirects indefinitely (until/unless
   someone re-creates the old name).
+
+## [0.4.3] — 2026-04-29 — Node only
+
+- Post-transfer metadata release (tarball URL points at the new owner).
+  Tag `node-v0.4.3`; see the transfer entry above.
+
+## [0.4.2] — 2026-04-27 — Node only
+
+- Next.js empty-`/metrics`-body fix (registry singletons pinned to
+  `globalThis` against webpack chunk splitting). Tag `node-v0.4.2`; see
+  [`node/CHANGELOG.md`](node/CHANGELOG.md) for the full analysis.
 
 ## [0.4.1] — 2026-04-26 — Node only
 

@@ -21,6 +21,7 @@ import inspect
 import logging
 import math
 import os
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -93,14 +94,50 @@ def get_service() -> str:
     return _SERVICE
 
 
+class PollerThread(threading.Thread):
+    """Daemon poll loop with a cooperative ``stop()``.
+
+    Returned by :func:`track_queue` and :func:`track_pool`. Callers that
+    tear down the polled resource (queue drained, pool closed, object
+    about to be GC'd) should call ``stop()`` — the loop exits within one
+    ``interval``. The loop also self-terminates once the interpreter
+    begins finalizing, so user callbacks are never invoked after
+    shutdown has started.
+    """
+
+    def __init__(self, *, name: str, interval: float, poll: Callable[[], None]):
+        super().__init__(name=name, daemon=True)
+        self._interval = interval
+        self._poll = poll
+        self._stop_event = threading.Event()
+
+    def stop(self) -> None:
+        """Ask the poll loop to exit; returns immediately."""
+        self._stop_event.set()
+
+    @property
+    def stopped(self) -> bool:
+        return self._stop_event.is_set()
+
+    def run(self) -> None:  # pragma: no cover - exercised via integration tests
+        while not self._stop_event.is_set():
+            if sys.is_finalizing():
+                return
+            self._poll()
+            if self._stop_event.wait(self._interval):
+                return
+
+
 def track_queue(
     queue: str,
     depth_fn: Callable[[], int],
     interval: float = 5.0,
-) -> threading.Thread:
+) -> PollerThread:
     """Poll ``depth_fn()`` every ``interval`` seconds and update the gauge.
 
-    Returns the poller thread (daemon). Safe to ignore the return value.
+    Returns the poller thread (daemon, a :class:`PollerThread`). Safe to
+    ignore the return value; keep it and call ``.stop()`` to end polling
+    when the tracked queue goes away.
 
     ``interval`` must be a positive finite number; ``interval=0``,
     ``nan``, ``inf``, ``-inf`` and other non-finite values are rejected
@@ -121,33 +158,31 @@ def track_queue(
 
     seen_failure = False  # log misbehaving callbacks once, not every tick
 
-    def _loop() -> None:
+    def _poll() -> None:
         nonlocal seen_failure
-        while True:
-            try:
-                depth = int(depth_fn())
-            except Exception as exc:
-                if not seen_failure:
-                    _log.warning(
-                        "simsys-metrics: depth_fn for queue %r raised %r; "
-                        "future failures will be silent. Reporting depth=0.",
-                        queue,
-                        exc,
-                    )
-                    seen_failure = True
-                depth = 0
-            try:
-                queue_depth.labels(service=service, queue=queue).set(depth)
-            except Exception as exc:
+        try:
+            depth = int(depth_fn())
+        except Exception as exc:
+            if not seen_failure:
                 _log.warning(
-                    "simsys-metrics: queue_depth.set for %r failed: %r", queue, exc
+                    "simsys-metrics: depth_fn for queue %r raised %r; "
+                    "future failures will be silent. Reporting depth=0.",
+                    queue,
+                    exc,
                 )
-            time.sleep(interval)
+                seen_failure = True
+            depth = 0
+        try:
+            queue_depth.labels(service=service, queue=queue).set(depth)
+        except Exception as exc:
+            _log.warning(
+                "simsys-metrics: queue_depth.set for %r failed: %r", queue, exc
+            )
 
-    t = threading.Thread(
-        target=_loop,
+    t = PollerThread(
         name=f"simsys-metrics-queue-{queue}",
-        daemon=True,
+        interval=interval,
+        poll=_poll,
     )
     t.start()
     return t
@@ -273,10 +308,12 @@ def track_pool(
     waiting_fn: Optional[Callable[[], int]] = None,
     max_size: Optional[int] = None,
     interval: float = 5.0,
-) -> threading.Thread:
+) -> PollerThread:
     """Poll pool stat callbacks every ``interval`` seconds and update gauges.
 
-    Returns the poller thread (daemon). Safe to ignore the return value.
+    Returns the poller thread (daemon, a :class:`PollerThread`). Safe to
+    ignore the return value; keep it and call ``.stop()`` to end polling
+    when the tracked pool goes away.
     """
     if (
         not isinstance(interval, (int, float))
@@ -295,31 +332,27 @@ def track_pool(
 
     seen_failure = False
 
-    def _loop() -> None:
+    def _poll() -> None:
         nonlocal seen_failure
-        while True:
-            try:
-                pool_active.labels(service=service, pool=name).set(float(active_fn()))
-                pool_idle.labels(service=service, pool=name).set(float(idle_fn()))
-                if waiting_fn is not None:
-                    pool_waiting.labels(service=service, pool=name).set(
-                        float(waiting_fn())
-                    )
-            except Exception as exc:
-                if not seen_failure:
-                    _log.warning(
-                        "simsys-metrics: pool callback for %r raised %r; "
-                        "future failures will be silent.",
-                        name,
-                        exc,
-                    )
-                    seen_failure = True
-            time.sleep(interval)
+        try:
+            pool_active.labels(service=service, pool=name).set(float(active_fn()))
+            pool_idle.labels(service=service, pool=name).set(float(idle_fn()))
+            if waiting_fn is not None:
+                pool_waiting.labels(service=service, pool=name).set(float(waiting_fn()))
+        except Exception as exc:
+            if not seen_failure:
+                _log.warning(
+                    "simsys-metrics: pool callback for %r raised %r; "
+                    "future failures will be silent.",
+                    name,
+                    exc,
+                )
+                seen_failure = True
 
-    t = threading.Thread(
-        target=_loop,
+    t = PollerThread(
         name=f"simsys-metrics-pool-{name}",
-        daemon=True,
+        interval=interval,
+        poll=_poll,
     )
     t.start()
     return t
@@ -328,11 +361,12 @@ def track_pool(
 def _reset_for_tests() -> None:
     """Test-only: clear the process-wide service global.
 
-    track_queue() spawns daemon threads which are not cleanly stoppable;
-    they die with the interpreter. The previous module-level reference
-    list (_QUEUE_THREADS) was an unbounded leak source — appended on
-    every track_queue call but never read except for `clear()` here.
-    Removed in v0.3.5.
+    track_queue()/track_pool() pollers are PollerThread instances —
+    cooperatively stoppable via .stop() since the FR-073/FR-104 fix, and
+    self-terminating at interpreter finalization. Tests that start
+    pollers should stop() them; anything left running dies with the
+    interpreter. (The old module-level _QUEUE_THREADS reference list was
+    removed in v0.3.5 as an unbounded leak source.)
     """
     global _SERVICE
     with _SERVICE_LOCK:

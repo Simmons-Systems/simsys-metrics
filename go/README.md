@@ -70,10 +70,13 @@ func main() {
     defer stopQueue()
 
     // Batch progress.
-    tr := m.TrackProgress(ctx, simsys.ProgressOpts{
+    tr, err := m.TrackProgress(ctx, simsys.ProgressOpts{
         Operation: "scan",
         Total:     int64(inputCount),
     })
+    if err != nil {
+        log.Fatalf("progress tracking misconfigured: %v", err)
+    }
     defer tr.Stop()
     for _, item := range work {
         process(item)

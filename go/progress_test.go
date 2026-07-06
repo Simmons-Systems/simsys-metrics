@@ -42,11 +42,14 @@ func TestTrackProgressSeedsGauges(t *testing.T) {
 	m := mustInstallForTest(t, "prog-seed")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tr := m.TrackProgress(ctx, ProgressOpts{
+	tr, err := m.TrackProgress(ctx, ProgressOpts{
 		Operation: "scan",
 		Total:     100,
 		Interval:  50 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("TrackProgress: %v", err)
+	}
 	defer tr.Stop()
 
 	body := scrapeMetrics(t, m)
@@ -65,11 +68,14 @@ func TestTrackProgressIncUpdatesCounter(t *testing.T) {
 	m := mustInstallForTest(t, "prog-inc")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tr := m.TrackProgress(ctx, ProgressOpts{
+	tr, err := m.TrackProgress(ctx, ProgressOpts{
 		Operation: "scan",
 		Total:     10,
 		Interval:  50 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("TrackProgress: %v", err)
+	}
 	defer tr.Stop()
 
 	tr.Inc(3)
@@ -96,11 +102,14 @@ func TestTrackProgressSetTotalUpdatesRemaining(t *testing.T) {
 	m := mustInstallForTest(t, "prog-settotal")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	tr := m.TrackProgress(ctx, ProgressOpts{
+	tr, err := m.TrackProgress(ctx, ProgressOpts{
 		Operation: "scan",
 		Total:     100,
 		Interval:  50 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("TrackProgress: %v", err)
+	}
 	defer tr.Stop()
 
 	tr.Inc(10)
@@ -119,11 +128,14 @@ func TestTrackProgressSetTotalUpdatesRemaining(t *testing.T) {
 
 func TestTrackProgressStopIsIdempotent(t *testing.T) {
 	m := mustInstallForTest(t, "prog-stop")
-	tr := m.TrackProgress(context.Background(), ProgressOpts{
+	tr, err := m.TrackProgress(context.Background(), ProgressOpts{
 		Operation: "scan",
 		Total:     10,
 		Interval:  50 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("TrackProgress: %v", err)
+	}
 	tr.Stop()
 	tr.Stop()
 }
@@ -136,24 +148,31 @@ func TestTrackProgressRejectsBadOpts(t *testing.T) {
 	}{
 		{"empty-operation", ProgressOpts{Operation: "", Total: 1}},
 		{"negative-total", ProgressOpts{Operation: "x", Total: -1}},
+		{"negative-window", ProgressOpts{Operation: "x", Total: 1, Window: -time.Second}},
+		{"negative-interval", ProgressOpts{Operation: "x", Total: 1, Interval: -time.Second}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			defer func() {
-				if recover() == nil {
-					t.Fatalf("expected panic for %+v", c.opts)
-				}
-			}()
-			_ = m.TrackProgress(context.Background(), c.opts)
+			tr, err := m.TrackProgress(context.Background(), c.opts)
+			if err == nil {
+				tr.Stop()
+				t.Fatalf("expected error for %+v", c.opts)
+			}
+			if tr != nil {
+				t.Fatalf("expected nil tracker on error, got %v", tr)
+			}
 		})
 	}
 }
 
 func TestTrackProgressIncRejectsNegative(t *testing.T) {
 	m := mustInstallForTest(t, "prog-neg")
-	tr := m.TrackProgress(context.Background(), ProgressOpts{
+	tr, err := m.TrackProgress(context.Background(), ProgressOpts{
 		Operation: "x", Total: 10, Interval: 50 * time.Millisecond,
 	})
+	if err != nil {
+		t.Fatalf("TrackProgress: %v", err)
+	}
 	defer tr.Stop()
 	defer func() {
 		if recover() == nil {

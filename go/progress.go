@@ -56,13 +56,17 @@ type progressTracker struct {
 
 // TrackProgress starts tracking a batch operation. Returns a tracker the
 // caller uses to report progress (Inc) and MUST stop (defer tr.Stop()).
-// Panics on invalid opts.
-func (m *Metrics) TrackProgress(ctx context.Context, opts ProgressOpts) ProgressTracker {
+//
+// Returns an error on invalid opts (empty Operation, negative Total,
+// negative Window/Interval) — opts values frequently come from runtime
+// config, so misconfiguration must be handleable rather than fatal.
+// (Changed from panicking in v0.3.0.)
+func (m *Metrics) TrackProgress(ctx context.Context, opts ProgressOpts) (ProgressTracker, error) {
 	if opts.Operation == "" {
-		panic("simsys-metrics: TrackProgress opts.Operation required")
+		return nil, fmt.Errorf("simsys-metrics: TrackProgress opts.Operation required")
 	}
 	if opts.Total < 0 {
-		panic(fmt.Sprintf("simsys-metrics: TrackProgress opts.Total must be >= 0, got %d", opts.Total))
+		return nil, fmt.Errorf("simsys-metrics: TrackProgress opts.Total must be >= 0, got %d", opts.Total)
 	}
 	if opts.Window == 0 {
 		opts.Window = 5 * time.Second
@@ -71,7 +75,7 @@ func (m *Metrics) TrackProgress(ctx context.Context, opts ProgressOpts) Progress
 		opts.Interval = 5 * time.Second
 	}
 	if opts.Window <= 0 || opts.Interval <= 0 {
-		panic("simsys-metrics: TrackProgress opts.Window and Interval must be > 0")
+		return nil, fmt.Errorf("simsys-metrics: TrackProgress opts.Window and Interval must be > 0")
 	}
 
 	t := &progressTracker{
@@ -105,7 +109,7 @@ func (m *Metrics) TrackProgress(ctx context.Context, opts ProgressOpts) Progress
 			}
 		}
 	}()
-	return t
+	return t, nil
 }
 
 func (t *progressTracker) Inc(n int64) {

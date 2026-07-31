@@ -1,17 +1,31 @@
 name: Release
 
+# Per-language release lanes, routed by tag prefix. The repo migrated
+# from unified `v*` tags to `python-v*` / `node-v*` / `go/v*` on
+# 2026-04-29 (see README "Tag prefix" table); the old `v*` trigger
+# never matched the new prefixes, so tag pushes silently skipped the
+# release job (Redmine #47681).
+#
+# workflow_dispatch is the retro-run lane: dispatch at a tag ref
+# (e.g. `gh workflow run release.yml --ref python-v0.3.11`) to build
+# artifacts for a tag pushed before this fix. Jobs gate on the ref
+# name prefix, so dispatching from a branch ref runs nothing.
+
 on:
   push:
     tags:
-      - "v*"
+      - "python-v*"
+      - "node-v*"
+      - "go/v*"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build-and-attest:
-    name: Build wheel + sdist, attest, release
+  python-release:
+    name: "Python: build wheel + sdist, attest, release"
+    if: startsWith(github.ref_name, 'python-v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,3 +56,66 @@ jobs:
         with:
           generate_release_notes: true
           files: dist/*
+
+  node-release:
+    name: "Node: pack tarball, attest, release"
+    if: startsWith(github.ref_name, 'node-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        working-directory: node
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - name: Install dependencies (locked)
+        run: npm ci
+
+      - name: Build (ESM + CJS)
+        run: npm run build
+
+      - name: Run vitest
+        run: npm test
+
+      # Pack into runner.temp so the glob below can never pick up a
+      # stray in-tree tarball. npm names scoped packages
+      # `simsys-metrics-<version>.tgz` — the README install URL shape.
+      - name: Pack release tarball
+        run: npm pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
+        with:
+          subject-path: "${{ runner.temp }}/simsys-metrics-*.tgz"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          generate_release_notes: true
+          files: ${{ runner.temp }}/simsys-metrics-*.tgz
+
+  go-release:
+    # Go consumers fetch the module by tag via the module proxy — no
+    # build artifacts to attach. This lane just publishes the GitHub
+    # release with generated notes for parity with the other lanes.
+    name: "Go: create release (module fetched by tag)"
+    if: startsWith(github.ref_name, 'go/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3.0.1
+        with:
+          generate_release_notes: true

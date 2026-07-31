@@ -16,6 +16,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build-node18` workflow job was removed. Consumers still on Node 18
   should stay on `0.4.x`. No API or runtime behavior changes.
 
+## [0.4.4] — 2026-06-10 (`node-v0.4.4`)
+
+Route cardinality hardening for the Next.js adapter (infra#37576), plus
+the `trackPool()` helper and a CJS dual-build that landed in the same
+release window. (Entry backfilled 2026-07-30 from the
+`node-v0.4.3..node-v0.4.4` diff — release notes were skipped at tag
+time; Redmine #47681.)
+
+### Added
+
+- **`trackPool()` opt-in helper for connection pool monitoring.** Polls
+  consumer-supplied `activeFn`/`idleFn` (and optional `waitingFn`)
+  callbacks on an interval (default 5000 ms) and sets the
+  `simsys_pool_active` / `simsys_pool_idle` / `simsys_pool_waiting` /
+  `simsys_pool_max` gauges, labelled `{service, pool}`. The interval
+  timer is `unref()`ed so it never holds the process open; callback
+  errors are swallowed rather than crashing the poller; non-finite or
+  non-positive `intervalMs` throws at call time. Exported from the
+  package root alongside `TrackPoolOpts`.
+- **CJS dual-build.** The package now ships `dist/cjs/` alongside the
+  ESM build: `main` points at `dist/cjs/index.js` and the `exports` map
+  gains `require` conditions for `.` and `./next/route`, so
+  `require("@simsys/metrics")` works from CommonJS consumers. Built via
+  a second `tsc -p tsconfig.cjs.json` pass (`module: Node16`) with a
+  `{"type": "commonjs"}` stub emitted into `dist/cjs/`.
+
+### Fixed
+
+- **Route-label cardinality explosion on public-facing Next.js apps**
+  (infra#37576). Internet-scanner wordlist paths (`/wp-login.php`,
+  `/abantecart/index.php`, …) are lowercase-wordish, which the
+  `bucketRoute()` allow-list kept verbatim — ~8k distinct route labels
+  and a 14 MB scrape body on bfr-leadership in 10 days. Two new layers
+  on top of `bucketRoute()`:
+  - **404 collapse**: responses with status 404 record
+    `route="/__unmatched__"`, mirroring the Express adapter's
+    router-miss label. Real-route 4xx (401/403 auth denials) keep their
+    bucketed label.
+  - **Distinct-route cap**: a per-process cap on minted route labels
+    (new `maxRoutes` install option, default 300); overflow records as
+    `/__overflow__`. The seen-set is pinned to `globalThis` per the
+    0.4.2 chunk-split-safety pattern so every webpack chunk copy spends
+    from the same budget. Sentinel labels can't be spoofed —
+    attacker-supplied `/__overflow__` buckets to `/:str`.
+
+  Five regression tests cover scanner wordlists, auth-denial fidelity,
+  cap overflow, seen-route continuity, and sentinel impersonation
+  (`tests/route-cardinality.test.ts`).
+
+### Changed
+
+- Dev-dependency floors bumped (dev-only, no runtime effect):
+  `typescript` ^6.0.3, `vitest` ^4.1.8, `hono` ^4.12.23, `@types/node`
+  ^25.9.2.
+
 ## [0.4.3] — 2026-04-29 (`node-v0.4.3`)
 
 ### Changed

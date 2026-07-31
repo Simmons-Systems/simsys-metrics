@@ -31,8 +31,14 @@ Per-language detail for the Node package lives in
 
 ## [0.4.4] — 2026-06-10 — Node only
 
-- Route cardinality hardening release. Tag `node-v0.4.4`; see
-  [`node/CHANGELOG.md`](node/CHANGELOG.md) for detail.
+- Route cardinality hardening release: the Next.js adapter collapses
+  404s to `/__unmatched__` and caps distinct route labels per process
+  (`maxRoutes` install option, default 300; overflow →
+  `/__overflow__`) (infra#37576). Also ships the `trackPool()`
+  connection-pool gauges (`simsys_pool_active/idle/waiting/max`) and a
+  CJS dual-build (`require("@simsys/metrics")` now works). Tag
+  `node-v0.4.4`; see [`node/CHANGELOG.md`](node/CHANGELOG.md) for
+  detail.
 
 ## [0.3.11] — 2026-04-29 — Python only
 

@@ -29,18 +29,29 @@ Per-language detail for the Node package lives in
   can yield nonsense quantiles until the rollout completes. Upgrade a service's
   replicas together. Adds ~3 series per label combination (fleet baseline was
   6,120 series for this metric family, so roughly +25%).
+  **Release status:** shipped for Python in `python-v0.4.0`. Node and Go carry
+  the same schedule on `main` but are **not yet released** — they ship with
+  their next respective tags.
 - **Go** — **BREAKING**: `TrackProgress` now returns
   `(ProgressTracker, error)` instead of panicking on invalid opts
   (empty Operation, negative Total/Window/Interval). Opts frequently
   come from runtime config, so misconfiguration is now handleable.
   Ships as `go/v0.3.0`. `Inc`/`SetTotal` still panic on negative
   values (programmer error, not runtime input).
-- **Python** — `track_queue()`/`track_pool()` now return a
-  `PollerThread` with a cooperative `.stop()` (fixes daemon-thread
-  leak on orphaned trackers), and poll loops self-terminate once the
-  interpreter begins finalizing (no more user callbacks after
-  shutdown). Return type is a `threading.Thread` subclass — fully
-  backward compatible.
+
+## [python-v0.4.0] — 2026-08-05 — Python only
+
+- **HTTP latency histogram buckets now extend past 10s** —
+  `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0`.
+  Minor rather than patch because it changes emitted metrics: dashboards and
+  recording rules that assume the old `le` set will see three new series per
+  label combination (~+25% for this metric family). See the `[Unreleased]`
+  entry above for the full rationale and the mixed-version rollout hazard.
+- `track_queue()`/`track_pool()` now return a `PollerThread` with a
+  cooperative `.stop()` (fixes daemon-thread leak on orphaned trackers), and
+  poll loops self-terminate once the interpreter begins finalizing (no more
+  user callbacks after shutdown). Return type is a `threading.Thread`
+  subclass — fully backward compatible.
 
 ## [0.5.0] — 2026-07-05 — Node only
 

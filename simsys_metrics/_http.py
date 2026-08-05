@@ -18,7 +18,29 @@ http_request_duration_seconds = make_histogram(
     "simsys_http_request_duration_seconds",
     "HTTP request duration in seconds, labelled by route template.",
     labelnames=("service", "method", "route"),
-    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+    # Tail above 10s added 2026-08-05. The schedule previously stopped at 10.0,
+    # so every request slower than that fell into +Inf and histogram_quantile
+    # could never return more than 10 — p95 pinned at exactly 10.00 for any
+    # service with a real tail. On the fleet, voicestudio had 23.3% of requests
+    # above the ceiling, making its true p95 unknowable, and an alert threshold
+    # of 15.0s on another service was structurally unfirable as a result.
+    # Must stay identical to node/src/registry.ts and go/metrics.go HTTPBuckets.
+    buckets=(
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.1,
+        0.25,
+        0.5,
+        1.0,
+        2.5,
+        5.0,
+        10.0,
+        15.0,
+        30.0,
+        60.0,
+    ),
 )
 
 

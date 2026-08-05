@@ -250,7 +250,10 @@ func (m *Metrics) MetricsHandler() http.Handler {
 
 // HTTPBuckets is the shared HTTP latency histogram bucket schedule.
 // Identical to Python/Node so cross-app dashboards align.
-var HTTPBuckets = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0}
+// Tail above 10s added 2026-08-05 — see simsys_metrics/_http.py for why.
+var HTTPBuckets = []float64{
+	0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0,
+}
 
 // JobBuckets is the shared job duration histogram bucket schedule.
 // Identical to Python/Node so cross-app dashboards align.

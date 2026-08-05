@@ -81,7 +81,12 @@ function initRegistryState(): SimsysRegistryState {
       help: "HTTP request duration in seconds, labelled by route template.",
       labelNames: ["service", "method", "route"],
       registers: [reg],
-      buckets: [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+      // Tail above 10s added 2026-08-05 — see simsys_metrics/_http.py for why.
+      // Must stay identical to the Python and Go schedules.
+      buckets: [
+        0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0,
+        60.0,
+      ],
     }),
     buildInfo: new Gauge({
       name: guardName("simsys_build_info"),

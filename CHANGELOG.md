@@ -10,6 +10,25 @@ Per-language detail for the Node package lives in
 
 ## [Unreleased]
 
+- **Python / Node / Go** — HTTP latency histogram buckets now extend past
+  10s: the schedule gains `15.0, 30.0, 60.0`, becoming
+  `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0`.
+  It previously stopped at `10.0`, so every request slower than that fell into
+  `+Inf` and `histogram_quantile` could never return more than 10 — p95 pinned
+  at exactly 10.00 for any service with a real tail. On the fleet, voicestudio
+  had **23.3%** of its requests above the ceiling (its true p95 was unknowable),
+  and a 15.0s alert threshold on another service was structurally unfirable as
+  a direct result. `JobBuckets` / job-duration buckets are unchanged — they
+  already ran to 300s. New cross-language tests pin the schedule (it was
+  previously unpinned in all three lanes, which is how the three could drift
+  and how the ceiling went unnoticed).
+  **Operational note:** buckets are baked in at instrumentation time, so this
+  only takes effect for a service once it upgrades and redeploys. During a
+  partial rollout, a service running mixed versions across replicas will emit
+  inconsistent `le` sets; `sum by (service, le)` over that is non-monotonic and
+  can yield nonsense quantiles until the rollout completes. Upgrade a service's
+  replicas together. Adds ~3 series per label combination (fleet baseline was
+  6,120 series for this metric family, so roughly +25%).
 - **Go** — **BREAKING**: `TrackProgress` now returns
   `(ProgressTracker, error)` instead of panicking on invalid opts
   (empty Operation, negative Total/Window/Interval). Opts frequently

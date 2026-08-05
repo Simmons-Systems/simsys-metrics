@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "simsys-metrics"
-version = "0.3.11"
+version = "0.4.0"
 description = "Drop-in Prometheus /metrics template for FastAPI and Flask web apps. One install() call; consistent simsys_* metric catalogue; optional queue/job/progress helpers."
 readme = "README.md"
 requires-python = ">=3.10"

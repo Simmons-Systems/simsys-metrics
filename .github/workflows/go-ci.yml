@@ -67,7 +67,7 @@ jobs:
           # Match go.mod's declared minimum (1.25); see comment on the
           # test job's matrix above. Deliberately NOT the latest minor —
           # staticcheck must run against the floor toolchain.
-          go-version: "1.26.x"
+          go-version: "1.27.x"
           cache-dependency-path: go/go.sum
 
       - name: staticcheck

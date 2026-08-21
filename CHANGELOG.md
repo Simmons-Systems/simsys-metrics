@@ -10,6 +10,18 @@ Per-language detail for the Node package lives in
 
 ## [Unreleased]
 
+- **CI** — the staticcheck job's Go toolchain and its staticcheck release are
+  now pinned as a matched pair by `tests/test_go_ci_staticcheck_pins.py`.
+  `install-go: false` plus `GOTOOLCHAIN=local` means staticcheck is built and
+  run with exactly the toolchain that job installs, so the version is bounded
+  on both sides — below staticcheck's own go.mod minimum it cannot build, above
+  the release's export-data ceiling every stdlib import fails. Moving one pin
+  without the other has broken the job three times (Renovate floated it in
+  `33db5b2` and `f7f90cd`; #80 raised it to 1.27.x against staticcheck 2026.1).
+  `renovate.json` already stops the bot; this stops a human, and it lives in the
+  pytest lane because the `go-ci.yml` jobs are not required status checks — a PR
+  can merge with staticcheck red, which is how #80 landed.
+
 - **Python / Node / Go** — HTTP latency histogram buckets now extend past
   10s: the schedule gains `15.0, 30.0, 60.0`, becoming
   `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0`.

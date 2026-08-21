@@ -64,18 +64,24 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Match go.mod's declared minimum (1.25); see comment on the
-          # test job's matrix above. Deliberately NOT the latest minor —
-          # staticcheck must run against the floor toolchain.
+          # KEEP IN SYNC with the staticcheck `version:` below. The action
+          # runs `go install honnef.co/go/tools/cmd/staticcheck@<version>`
+          # against THIS toolchain, so a staticcheck release older than the
+          # Go minor here fails to decode stdlib export data:
+          #   "export data version N is greater than maximum supported version M".
+          # A staticcheck release only supports Go minors up to its own
+          # release date, so this must never lead staticcheck's support.
           go-version: "1.27.x"
           cache-dependency-path: go/go.sum
 
       - name: staticcheck
         # SHA-pinned action (Scorecard Pinned-Dependencies) maintained by
         # staticcheck's author — replaces the unhashed `go install ...@2026.1`.
-        # install-go: false → uses the 1.25 floor toolchain from setup-go above.
+        # install-go: false → builds+runs staticcheck with the setup-go
+        # toolchain above, hence the sync requirement noted there.
+        # 2026.2 is the first release with Go 1.27 support.
         uses: dominikh/staticcheck-action@9716614d4101e79b4340dd97b10e54d68234e431 # v1.4.1
         with:
-          version: "2026.1"
+          version: "2026.2"
           install-go: false
           working-directory: go

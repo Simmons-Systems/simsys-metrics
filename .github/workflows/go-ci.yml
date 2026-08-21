@@ -64,22 +64,47 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # KEEP IN SYNC with the staticcheck `version:` below. The action
-          # runs `go install honnef.co/go/tools/cmd/staticcheck@<version>`
-          # against THIS toolchain, so a staticcheck release older than the
-          # Go minor here fails to decode stdlib export data:
-          #   "export data version N is greater than maximum supported version M".
-          # A staticcheck release only supports Go minors up to its own
-          # release date, so this must never lead staticcheck's support.
+          # The Go version here is bounded on BOTH sides, so it must be an
+          # explicit pin — do not switch this to `go-version-file: go/go.mod`.
+          #
+          # The staticcheck step below runs with `install-go: false` and
+          # GOTOOLCHAIN=local, so the staticcheck binary is BUILT and RUN with
+          # exactly the toolchain this step installs. That creates two bounds:
+          #
+          #   lower — staticcheck's own go.mod sets a minimum. 2026.2 declares
+          #           `go 1.26.0`, so a 1.25 toolchain cannot even build it:
+          #           "requires go >= 1.26.0 (running go 1.25.0; GOTOOLCHAIN=local)".
+          #   upper — a staticcheck release can only decode export data from the
+          #           toolchains it shipped with, so a toolchain NEWER than the
+          #           `version:` pin below fails every stdlib import with
+          #           "export data version N is greater than maximum supported version M".
+          #
+          # Deriving this from go/go.mod (currently `go 1.25.0`) violates the
+          # lower bound and was tried — it fails. The module floor and the
+          # linter toolchain are genuinely different things.
+          #
+          # This pin must therefore move together with the `version:` pin below,
+          # by hand. Renovate floated it twice before (33db5b2, f7f90cd), each
+          # time rewriting a deliberate pin and leaving the comment describing
+          # the opposite of the config; renovate.json now carries a packageRules
+          # entry disabling `go` updates for this file to prevent a third.
           go-version: "1.27.x"
           cache-dependency-path: go/go.sum
 
       - name: staticcheck
         # SHA-pinned action (Scorecard Pinned-Dependencies) maintained by
         # staticcheck's author — replaces the unhashed `go install ...@2026.1`.
-        # install-go: false → builds+runs staticcheck with the setup-go
-        # toolchain above, hence the sync requirement noted there.
-        # 2026.2 is the first release with Go 1.27 support.
+        #
+        # `install-go: false` means this uses the go/go.mod floor toolchain
+        # installed by the step above; the two are coupled deliberately.
+        #
+        # Renovate does NOT manage this `version:` input: only
+        # actions/setup-{go,node,python} inputs and a fixed community-action
+        # registry are extracted, and dominikh/staticcheck-action is in
+        # neither. Renovate bumps the action's own SHA/tag (v1.4.1), never the
+        # staticcheck release below. So this pin moves by hand — raise it in
+        # the same change that raises the `go` directive in go/go.mod.
+          # 2026.2 is the first staticcheck release with Go 1.27 support.
         uses: dominikh/staticcheck-action@9716614d4101e79b4340dd97b10e54d68234e431 # v1.4.1
         with:
           version: "2026.2"

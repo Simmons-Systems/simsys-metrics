@@ -7,5 +7,31 @@
     "managerFilePatterns": [
       "/^\\.github/requirements/.*\\.txt$/"
     ]
-  }
+  },
+  "packageRules": [
+    {
+      "description": [
+        "Do not let Renovate float the Go toolchain inside .github/workflows/go-ci.yml.",
+        "Why: the staticcheck job runs dominikh/staticcheck-action with install-go: false and GOTOOLCHAIN=local, so staticcheck is BUILT and RUN with exactly the toolchain actions/setup-go installs there. That version is bounded on both sides: staticcheck's own go.mod sets a minimum (2026.2 declares `go 1.26.0`), and a staticcheck release can only decode export data from the toolchains it shipped with, so a newer toolchain fails every stdlib import.",
+        "Renovate does not manage that action's `version:` input \u2014 only actions/setup-{go,node,python} inputs and a fixed community-action registry are extracted \u2014 so the toolchain would float while the linter pin stayed frozen, breaking the job on every Go minor release.",
+        "History: commits 33db5b2 and f7f90cd each rewrote a deliberate `go-version: \"1.25.x\"` pin in that job, leaving behind a comment that then described the opposite of the config.",
+        "Deriving the version from go/go.mod does NOT work: the module floor (go 1.25.0) is below staticcheck 2026.2's minimum, so the build fails outright. The module floor and the linter toolchain are different things.",
+        "To move the Go toolchain used for linting, edit the `go-version:` pin in that job and review the staticcheck `version:` pin in the same change.",
+        "Scope: matchDepTypes uses-with covers only setup-* version inputs, so `uses:` action digest updates in this file keep flowing normally."
+      ],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchFileNames": [
+        ".github/workflows/go-ci.yml"
+      ],
+      "matchDepTypes": [
+        "uses-with"
+      ],
+      "matchDepNames": [
+        "go"
+      ],
+      "enabled": false
+    }
+  ]
 }

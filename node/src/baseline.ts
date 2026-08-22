@@ -53,6 +53,21 @@ const _state: SimsysBaselineState = (globalThis.__simsysMetricsBaselineState ??=
 const _LIVE_TRACKER_WARN_AT = 64;
 const _warnedSets = new WeakSet<Set<NodeJS.Timeout>>();
 
+function _warnEmptyName(kind: "queue" | "pool", name: unknown): void {
+  // An empty name emits queue=""/pool="" — a series no dashboard template
+  // matches, indistinguishable from a mislabelled one. Python has the same
+  // gap and Go validates. Warn now, throw in the next major; the series is
+  // still emitted so no deployed consumer breaks on upgrade.
+  if (typeof name !== "string" || name.trim() === "") {
+    console.warn(
+      `[simsys-metrics] track${kind === "queue" ? "Queue" : "Pool"} name must ` +
+        `be a non-empty string, got ${JSON.stringify(name)}. The series is ` +
+        `still emitted for backward compatibility; this will throw in the ` +
+        `next major version.`,
+    );
+  }
+}
+
 function _attachStop(
   timer: NodeJS.Timeout,
   set: Set<NodeJS.Timeout>,
@@ -108,6 +123,27 @@ export function _liveTrackerCounts(): { queue: number; pool: number } {
  */
 export function setService(service: string | null): void {
   if (service !== null) {
+    // A second install() with a different service silently re-labels every
+    // series (#50321). The per-app guards in adapters/express.ts and
+    // adapters/hono.ts are keyed on the app OBJECT, so install(appA, "foo")
+    // then install(appB, "bar") never reaches them.
+    //
+    // console.error, not warn: this corrupts every series in the process.
+    // Behaviour is unchanged for now -- the fleet is swept for this marker
+    // before it becomes a throw in the next major. Guarded on a non-null
+    // prior so first install and rollback (setService(null)) stay quiet.
+    const prior = _state.service;
+    const next = service.trim();
+    if (prior !== null && prior !== next) {
+      console.error(
+        `[simsys-metrics] SERVICE IDENTITY CHANGE ${JSON.stringify(prior)} -> ` +
+          `${JSON.stringify(next)}. One service identity per process is the ` +
+          `contract. Trackers already started will now emit under the NEW ` +
+          `service, and the prior service's process metrics disappear. If you ` +
+          `genuinely need two identities, run two processes. This will throw ` +
+          `in the next major version.`,
+      );
+    }
     const trimmed = service.trim();
     if (trimmed !== service) {
       console.warn(
@@ -167,6 +203,7 @@ export function trackQueue(
   name: string,
   opts: TrackQueueOpts,
 ): PollerHandle {
+  _warnEmptyName("queue", name);
   const service = getService();
   const intervalMs = opts.intervalMs ?? 5000;
   // Reject intervalMs <= 0: setInterval(..., 0) creates a hot loop that
@@ -307,7 +344,8 @@ export interface TrackPoolOpts {
 export function trackPool(
   name: string,
   opts: TrackPoolOpts,
-): NodeJS.Timeout {
+): PollerHandle {
+  _warnEmptyName("pool", name);
   const service = getService();
   const intervalMs = opts.intervalMs ?? 5000;
   if (typeof intervalMs !== "number" || !Number.isFinite(intervalMs) || intervalMs <= 0) {

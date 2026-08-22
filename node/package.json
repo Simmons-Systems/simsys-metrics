@@ -30,6 +30,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "typecheck": "tsc -p tsconfig.tests.json",
     "build": "tsc && tsc -p tsconfig.cjs.json && echo '{\"type\":\"commonjs\"}' > dist/cjs/package.json",
     "test": "vitest run",
     "prepublishOnly": "npm run build && npm test"

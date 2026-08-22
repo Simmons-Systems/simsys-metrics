@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "node/**"
+      - "spec/**"          # contract edits must exercise this lane
       - ".github/workflows/test-node.yml"
   pull_request:
     paths:
       - "node/**"
+      - "spec/**"          # contract edits must exercise this lane
       - ".github/workflows/test-node.yml"
 
 permissions:

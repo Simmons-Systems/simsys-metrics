@@ -1,6 +1,6 @@
 /**
  * Regression test for the Phase 3 Next.js empty-body bug
- * (https://github.com/Avicennasis/simsys-metrics — node v0.4.1 → v0.4.2).
+ * (https://github.com/Simmons-Systems/simsys-metrics — node v0.4.1 → v0.4.2).
  *
  * Webpack standalone bundling can inline this package's modules into
  * multiple server chunks (e.g. instrumentation.ts and

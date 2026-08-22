@@ -9,7 +9,7 @@
  *   trackJob(name).run(() => ...)          // ad-hoc async span
  *   safeLabel(value, allowedSet)
  *
- * See https://github.com/Avicennasis/simsys-metrics (Python reference) for
+ * See https://github.com/Simmons-Systems/simsys-metrics (Python reference) for
  * the canonical metric catalogue and cardinality rules.
  */
 

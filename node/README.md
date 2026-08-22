@@ -194,8 +194,23 @@ trackQueue("inference", {
 });
 ```
 
-The `depthFn` can return a number or a `Promise<number>`. Failures are
-swallowed (the gauge stays at its last successful value or 0).
+The `depthFn` can return a number or a `Promise<number>`.
+
+> **Current failure behaviour — a throwing `depthFn` reports depth `0`.**
+> Not the last successful value: `depth` is reset to `0` each tick and set
+> unconditionally, and nothing is logged. So a queue whose depth callback is
+> broken is indistinguishable on the dashboard from a queue that is empty,
+> which is the reading an operator is least likely to investigate.
+>
+> `trackPool` differs — its catch wraps the whole tick, so pool gauges do
+> keep their previous values on failure.
+>
+> This is a known defect ([Redmine #50319](https://github.com/Simmons-Systems/simsys-metrics)),
+> not the intended contract. The fix — preserve the last known value, leave
+> the series absent when the very first tick fails, and count failures on
+> `simsys_collector_errors_total` — changes an emitted value, so it ships in
+> its own release rather than alongside additive changes. Until then, treat
+> a flat `0` on `simsys_queue_depth` as *possibly* a broken callback.
 
 ### Job timing
 

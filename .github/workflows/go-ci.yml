@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - "go/**"
+      - "spec/**"          # contract edits must exercise this lane
       - ".github/workflows/go-ci.yml"
   pull_request:
     paths:
       - "go/**"
+      - "spec/**"          # contract edits must exercise this lane
       - ".github/workflows/go-ci.yml"
 
 permissions:

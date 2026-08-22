@@ -9,6 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [1.0.0] — 2026-08-22
+
+**All three packages align on 1.0.0 from this release. The version number is
+now the CONTRACT version, and it means the same thing in every lane.**
+
+Before this, the lanes drifted independently — Python 0.4.0, Node 0.5.0, Go
+0.3.1 — so "which version am I on" had three different answers and none of
+them told you which metric catalogue you were getting. Now `1.0.0` in any
+lane means the same `spec/metrics-contract.json`: the same metric names,
+types, label sets, enums and bucket schedules.
+
+Aligned at the first registry publication deliberately. Version numbers on a
+package index cannot be reused, so this is the one moment the renumbering is
+free.
+
+### Why 1.0.0 rather than another 0.x
+
+The package has ~25 consumers in production, a machine-readable contract, and
+cross-language conformance tests. 0.x signals "the shape may still move
+arbitrarily", which stopped being true. 1.0.0 is the accurate signal, and it
+makes the next breaking change say so in the version rather than hiding in a
+minor bump.
+
+**The pending poller-behaviour change (#50319) and the GC label-schema fix
+(#50345) are therefore 2.0.0, not 1.1.0.** Both change an emitted series, and
+under semver that is a major.
+
+### Added
+
+- **Published to npm.** `npm install @simsys/metrics`
+- `spec/metrics-contract.json` — machine-readable catalogue, with per-lane
+  conformance tests asserting against a live registry.
+- Shipped Grafana dashboard and Prometheus alert pack under `dashboards/`.
+
+### Changed
+
+- No behavioural change from the previous release in this lane. This is a
+  renumbering plus packaging; every emitted series is byte-identical.
+
 ## [0.5.0] — 2026-07-05 — Node only
 
 ### Changed

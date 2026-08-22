@@ -329,3 +329,46 @@ def test_changelogs_have_an_unreleased_section() -> None:
             f"The newest-release detection above depends on reverse-chronological "
             f"ordering; verify that still holds before changing this."
         )
+
+
+# --------------------------------------------------------------------------
+# Cross-lane alignment -- the invariant that makes "standardized" real
+# --------------------------------------------------------------------------
+
+
+def test_all_three_lanes_are_on_the_same_version() -> None:
+    """The version number IS the contract version, in every lane.
+
+    Before 1.0.0 the lanes drifted independently -- Python 0.4.0, Node 0.5.0,
+    Go 0.3.1 -- so "which version am I on" had three different answers and
+    none of them identified which metric catalogue you were getting.
+
+    From 1.0.0 they move together. That is only true if something enforces it:
+    the natural failure is bumping one lane for a lane-specific fix and
+    quietly re-introducing the drift this replaced. Bumping one lane now means
+    bumping all three, deliberately.
+
+    If a change genuinely affects only one runtime, it still gets a version in
+    all three -- the number identifies the CONTRACT, not the size of the diff.
+    """
+    py = python_pyproject_version()
+    node = node_package_version()
+    go = go_changelog_version()
+    assert py == node == go, (
+        f"lanes have drifted: python={py}, node={node}, go={go}. From 1.0.0 the "
+        f"version number is the contract version and must match across all "
+        f"three. Bump all three together, or the number stops identifying "
+        f"which catalogue a consumer has."
+    )
+
+
+def test_version_matches_the_contract_version() -> None:
+    """And that shared number is the one the contract declares."""
+    from .contract import load_contract
+
+    declared = load_contract()["contract_version"]
+    assert python_pyproject_version() == declared, (
+        f"packages are {python_pyproject_version()} but "
+        f"spec/metrics-contract.json declares contract_version {declared}. "
+        f"These are the same number by definition."
+    )

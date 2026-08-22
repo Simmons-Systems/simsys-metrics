@@ -51,6 +51,21 @@ jobs:
         with:
           subject-path: "dist/*"
 
+      # Sanity-check the artifacts BEFORE anything irreversible. A PyPI
+      # version number can never be reused, so a malformed sdist discovered
+      # after upload costs a version rather than a retry.
+      - name: Validate distributions
+        run: |
+          python -m pip install --require-hashes -r .github/requirements/build.txt
+          python -m twine check --strict dist/*
+
+      - name: Publish to PyPI
+        # Trusted Publishing (OIDC) -- no long-lived token in secrets. The
+        # id-token: write permission this job already declares is what
+        # authenticates; PyPI must have a matching publisher configured for
+        # this repo + workflow filename + environment.
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
       - name: Create GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -96,6 +111,18 @@ jobs:
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: "${{ runner.temp }}/simsys-metrics-*.tgz"
+
+      # --provenance is the natural continuation of the attestation above:
+      # npm records the same build-provenance link on the registry entry.
+      # Requires id-token: write, which this job already declares.
+      #
+      # The GitHub Release tarball asset below is KEPT deliberately. Existing
+      # consumers pin that URL directly, and registry publication must be
+      # purely additive -- nothing is forced to migrate on a deadline.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2

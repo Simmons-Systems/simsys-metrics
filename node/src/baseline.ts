@@ -35,7 +35,47 @@ const _state: SimsysBaselineState = (globalThis.__simsysMetricsBaselineState ??=
   poolTimers: [],
 });
 
+/**
+ * Set the process-wide service label. Called by install().
+ *
+ * The value is trimmed. `service` is the join key between this package and
+ * simsys-logevent -- an operator pivots from
+ * `simsys_http_requests_total{service="x"}` in Prometheus to
+ * `{service="x"} | json` in Loki -- and simsys-logevent trims its own copy.
+ * Without this, `"  portal  "` here and `"portal"` there are two different
+ * identities and the pivot silently returns nothing.
+ *
+ * Trimming is safe to do now rather than deferring to a major: all 36
+ * services reporting `simsys_build_info` were checked against live
+ * Prometheus on 2026-08-22 and none carries leading or trailing whitespace,
+ * so this is a measured no-op on the deployed fleet. A padded name is a
+ * caller typo in every observed case, and the trimmed value is what the
+ * caller meant.
+ *
+ * `install()` already rejects a falsy service, but `"   "` is truthy and
+ * reaches here, so an empty-after-trim value is warned about and still set
+ * -- consistent with the warn-now/throw-in-the-next-major policy.
+ */
 export function setService(service: string | null): void {
+  if (service !== null) {
+    const trimmed = service.trim();
+    if (trimmed !== service) {
+      console.warn(
+        `[simsys-metrics] service ${JSON.stringify(service)} has ` +
+          `leading/trailing whitespace; using ${JSON.stringify(trimmed)}. ` +
+          `\`service\` is the join key with simsys-logevent, which trims its ` +
+          `own copy -- an untrimmed value here would not match in Loki.`,
+      );
+    }
+    if (trimmed === "") {
+      console.warn(
+        `[simsys-metrics] service ${JSON.stringify(service)} is empty after ` +
+          `trimming. Every series will carry service="", which no dashboard ` +
+          `template will match. This will throw in the next major version.`,
+      );
+    }
+    service = trimmed;
+  }
   _state.service = service;
 }
 

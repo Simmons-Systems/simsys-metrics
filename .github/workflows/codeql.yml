@@ -15,26 +15,73 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze
+    # Named explicitly on `language` ALONE, deliberately. GitHub derives a
+    # matrix job's name from every matrix key, so adding `build-mode` renamed
+    # this job from `Analyze (actions)` to `Analyze (actions, none)` -- and
+    # `Analyze (actions)` is a REQUIRED status check in the `main-protection`
+    # ruleset. A required check that no job reports is never satisfied, so
+    # that rename would have made `main` permanently unmergeable, with the
+    # error surfacing only at merge time rather than as a red check. Pinning
+    # the name keeps the existing gate reporting and adds the three new
+    # languages beside it.
+    #
+    # Consequence for whoever adds the new jobs to the required list: the
+    # contexts are `Analyze (python)`, `Analyze (go)` and
+    # `Analyze (javascript-typescript)` -- no build-mode suffix.
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       security-events: write
       actions: read
       contents: read
 
+    # `actions` alone scans workflow YAML and ZERO lines of Python, TS or Go.
+    # It was the only entry here until 2026-08-22, while `Analyze (actions)`
+    # was simultaneously the repo's required status check -- so every PR
+    # showed a green CodeQL gate that had never looked at the source. The
+    # three source languages below are the point of running CodeQL at all;
+    # `actions` stays because the workflow-injection queries are genuinely
+    # useful on a repo whose release lane holds `id-token: write`.
     strategy:
       fail-fast: false
       matrix:
-        language: [actions]
+        include:
+          - language: actions
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          # Go is a compiled extractor: `none` would produce an empty
+          # database rather than an error. Built explicitly rather than via
+          # autobuild because the module lives in `go/`, not the repo root.
+          - language: go
+            build-mode: manual
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Pinned to go.mod's own minimum rather than a floating version. This
+      # only has to BUILD the module for extraction -- it is not the test
+      # matrix, so it deliberately does not mirror go-ci.yml's 1.25/1.26 pair.
+      - name: Set up Go
+        if: matrix.language == 'go'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: go/go.sum
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4
         with:
           languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Build Go module for extraction
+        if: matrix.language == 'go'
+        working-directory: go
+        run: go build ./...
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4

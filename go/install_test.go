@@ -4,6 +4,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func TestInstallRequiresServiceAndVersion(t *testing.T) {
@@ -74,5 +76,45 @@ func TestInstallCommitFallbackDetects(t *testing.T) {
 	// Some commit label must be present (env, debug.ReadBuildInfo, git, or "unknown").
 	if !strings.Contains(body, `commit="`) {
 		t.Fatalf("no commit= label in build_info; body:\n%s", body)
+	}
+}
+
+// Service is the join key with simsys-logevent, which trims its own copy of
+// it. An all-whitespace Service must therefore not become a real identity --
+// it folds into the existing empty-Service rejection rather than emitting
+// series labelled with spaces. (Python and Node warn-and-continue here; Go
+// already had a hard error to fold into, so it keeps it.)
+func TestInstallTrimsServiceAndVersion(t *testing.T) {
+	if _, err := Install(InstallOpts{Service: "   ", Version: "1.0.0"}); !errors.Is(err, ErrInvalidInstallOpts) {
+		t.Fatalf("all-whitespace service: want ErrInvalidInstallOpts, got %v", err)
+	}
+	if _, err := Install(InstallOpts{Service: "svc", Version: "  "}); !errors.Is(err, ErrInvalidInstallOpts) {
+		t.Fatalf("all-whitespace version: want ErrInvalidInstallOpts, got %v", err)
+	}
+
+	m, err := Install(InstallOpts{
+		Service:  "  trim-svc  ",
+		Version:  "  1.2.3  ",
+		Registry: prometheus.NewRegistry(),
+	})
+	if err != nil {
+		t.Fatalf("padded but valid opts should install: %v", err)
+	}
+	if m.service != "trim-svc" {
+		t.Fatalf("service not trimmed: got %q, want %q", m.service, "trim-svc")
+	}
+
+	// Negative control: only the ends are trimmed. If inner whitespace were
+	// collapsed too, this would be silently rewriting service names.
+	m2, err := Install(InstallOpts{
+		Service:  " my svc ",
+		Version:  "1.0.0",
+		Registry: prometheus.NewRegistry(),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m2.service != "my svc" {
+		t.Fatalf("inner whitespace not preserved: got %q", m2.service)
 	}
 }

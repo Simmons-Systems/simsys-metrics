@@ -7,21 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **A `go/v0.3.0` tag exists on `main` and is deliberately NOT documented as a
-> release here.** It was pushed on 2026-07-06 (`8636e8c`) carrying substantive
-> work — `TrackPool` plus the four `simsys_pool_*` gauges, process/runtime
-> metrics, `simsys_scrape_*`, a fuzz target, and a **breaking** `TrackProgress`
-> signature change from `ProgressTracker` to `(ProgressTracker, error)` — but no
-> GitHub release was ever created for it, because the tag predates the
-> tag-routing fix in `release.yml`. It also predates the extended HTTP bucket
-> schedule, so pinning it would *regress* the p95 ceiling fix that Python
-> already shipped.
->
-> **Do not pin `go/v0.3.0`.** The newest release consumers should use is
-> `go/v0.2.11` below. Redmine #50032 tracks superseding the tag rather than
-> deleting or re-pointing it — `proxy.golang.org` caches module tags
-> immutably, so a re-pointed tag hands a checksum mismatch to anyone who
-> already fetched it.
+Nothing yet.
+
+## [go/v0.3.1] — 2026-08-22
+
+Supersedes the abandoned `go/v0.3.0` tag. **Pin `go/v0.3.1`, not `go/v0.3.0`.**
+
+### Why v0.3.1 and not a re-tag
+
+`go/v0.3.0` was pushed on 2026-07-06 (`8636e8c`) carrying real work, but no
+GitHub release was ever created for it: the tag predates the tag-routing fix
+in `release.yml`, which only matched the old unified `v*` prefix. It was never
+documented here either, so a consumer had no way to tell whether it was a
+release, a pre-release, or an abandoned tag — gorapide-observer deliberately
+pinned `v0.2.11` because of exactly that ambiguity (Redmine #50032).
+
+The tag is **left exactly where it is**. `proxy.golang.org` caches module tags
+immutably, so re-pointing one hands a checksum mismatch to anyone who already
+fetched it. Superseding is the only safe move.
+
+`go/v0.3.0` also predates the extended HTTP bucket schedule, so pinning it
+would *regress* the p95 ceiling fix that Python already shipped.
+
+### Added
+
+- `TrackPool` and the four `simsys_pool_*` gauges (`active`, `idle`,
+  `waiting`, `max`). Returns an idempotent `stop func()`.
+- Runtime and process metrics: `simsys_process_threads`,
+  `simsys_runtime_goroutines`, `simsys_runtime_gc_collections_total`,
+  `simsys_runtime_gc_pause_total_seconds`.
+- `simsys_scrape_duration_seconds` and `simsys_scrape_errors_total`.
+- `fuzz_test.go` — fuzz target over the HTTP label normalisation path.
+- Conformance against `spec/metrics-contract.json` (`contract_conformance_test.go`).
+
+### Changed (BREAKING, from v0.2.11)
+
+- **`TrackProgress` now returns `(ProgressTracker, error)`** instead of
+  `ProgressTracker`, and validates its options rather than panicking on
+  invalid input. Call sites need one extra error check. This is the whole of
+  the breaking surface between v0.2.11 and here.
+- HTTP latency buckets extended past 10s — the schedule gains `15.0, 30.0,
+  60.0`. Buckets are baked in at instrumentation time, so a service only picks
+  this up when it upgrades and redeploys; during a partial rollout a service
+  running mixed versions across replicas emits inconsistent `le` sets.
+- `Install` now trims `Service` and `Version`, so an all-whitespace value
+  folds into the existing `ErrInvalidInstallOpts` rather than becoming a real
+  identity. `service` is the join key with simsys-logevent, which trims its
+  own copy.
+
+### Fixed
+
+- `simsys_scrape_errors_total` was registered but **never incremented**, while
+  `MetricsHandler`'s doc comment claimed it was — it read 0 forever, so an
+  operator alerting on it had a permanently green signal from an unwired
+  instrument. Now wired through `promhttp`'s `ErrorLog` (#50320).
+- The same counter had **no series at all** until the first error, because a
+  `CounterVec` creates no child until `WithLabelValues`. `rate()` over an
+  absent series returns nothing rather than 0, so an "errors started" alert
+  could not fire on the transition that matters. Initialised to 0 at install.
+
+### Known divergence
+
+`simsys_runtime_gc_collections_total` carries `["service"]` here and
+`["service", "generation"]` in Python. Tracked as #50345 and declared in
+`spec/metrics-contract.json`; a panel using `by (generation)` returns empty
+for Go services.
 
 ## [go/v0.2.11] — 2026-04-29
 

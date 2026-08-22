@@ -48,7 +48,10 @@ Per-language detail for the Node package lives in
   `(ProgressTracker, error)` instead of panicking on invalid opts
   (empty Operation, negative Total/Window/Interval). Opts frequently
   come from runtime config, so misconfiguration is now handleable.
-  Ships as `go/v0.3.0`. `Inc`/`SetTotal` still panic on negative
+  Ships as `go/v0.3.1` -- the `go/v0.3.0` tag was pushed but never released
+  or documented, and is superseded rather than re-pointed because
+  proxy.golang.org caches module tags immutably (Redmine #50032; details in
+  go/CHANGELOG.md). `Inc`/`SetTotal` still panic on negative
   values (programmer error, not runtime input).
 
 ## [python-v0.4.0] — 2026-08-05 — Python only

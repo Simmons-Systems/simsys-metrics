@@ -165,21 +165,44 @@ unmodified across every app.
 > warn at registration time if `service` is missing — see the example
 > in [Rich outcome taxonomies](#rich-outcome-taxonomies) below.
 
-| Metric | Type | Labels | Source |
-|---|---|---|---|
-| `simsys_http_requests_total` | Counter | `service, method, route, status` | baseline |
-| `simsys_http_request_duration_seconds` | Histogram | `service, method, route` | baseline |
-| `simsys_process_cpu_seconds_total` | Counter | `service` | baseline |
-| `simsys_process_memory_bytes` | Gauge | `service, type` (`rss`, `vms`) | baseline |
-| `simsys_process_open_fds` | Gauge | `service` | baseline |
-| `simsys_build_info` | Gauge = 1 | `service, version, commit, started_at` | baseline |
-| `simsys_queue_depth` | Gauge | `service, queue` | opt-in (`track_queue`) |
-| `simsys_jobs_total` | Counter | `service, job, outcome` | opt-in (`track_job`) |
-| `simsys_job_duration_seconds` | Histogram | `service, job, outcome` | opt-in (`track_job`) |
-| `simsys_progress_processed_total` | Counter | `service, operation` | opt-in (`track_progress`) |
-| `simsys_progress_remaining` | Gauge | `service, operation` | opt-in (`track_progress`) |
-| `simsys_progress_rate_per_second` | Gauge | `service, operation` | opt-in (`track_progress`) |
-| `simsys_progress_estimated_completion_timestamp` | Gauge | `service, operation` | opt-in (`track_progress`) |
+<!-- BEGIN GENERATED CATALOGUE -- derived from spec/metrics-contract.json.
+     Do not hand-edit rows: tests/test_catalogue_matches_contract.py asserts
+     this table against the contract, and the contract is the source of
+     truth. Change the contract, then regenerate. -->
+
+| Metric | Type | Labels | Runtimes | Tier | Source |
+|---|---|---|---|---|---|
+| `simsys_build_info` | Gauge = 1 | `service, version, commit, started_at` | Py Node Go | core | baseline |
+| `simsys_http_request_duration_seconds` | Histogram | `service, method, route` | Py Node Go | core | baseline |
+| `simsys_http_requests_total` | Counter | `service, method, route, status` | Py Node Go | core | baseline |
+| `simsys_job_duration_seconds` | Histogram | `service, job, outcome` | Py Node Go | core | opt-in |
+| `simsys_jobs_total` | Counter | `service, job, outcome` | Py Node Go | core | opt-in |
+| `simsys_pool_active` | Gauge | `service, pool` | Py Node Go | core | opt-in |
+| `simsys_pool_idle` | Gauge | `service, pool` | Py Node Go | core | opt-in |
+| `simsys_pool_max` | Gauge | `service, pool` | Py Node Go | core | opt-in |
+| `simsys_pool_waiting` | Gauge | `service, pool` | Py Node Go | core | opt-in |
+| `simsys_process_cpu_seconds_total` | Counter | `service` | Py Node Go | core | baseline |
+| `simsys_process_memory_bytes` | Gauge | `service, type` | Py Node Go | core | baseline — `type` values differ by runtime, see caveat below |
+| `simsys_process_open_fds` | Gauge | `service` | Py Node Go | core | baseline |
+| `simsys_progress_estimated_completion_timestamp` | Gauge | `service, operation` | Py Node Go | core | opt-in |
+| `simsys_progress_processed_total` | Counter | `service, operation` | Py Node Go | core | opt-in |
+| `simsys_progress_rate_per_second` | Gauge | `service, operation` | Py Node Go | core | opt-in |
+| `simsys_progress_remaining` | Gauge | `service, operation` | Py Node Go | core | opt-in |
+| `simsys_queue_depth` | Gauge | `service, queue` | Py Node Go | core | opt-in |
+| `simsys_process_threads` | Gauge | `service` | Py Go | **ext** | baseline |
+| `simsys_process_uptime_seconds` | Gauge | `service` | Node | **ext** | baseline |
+| `simsys_runtime_gc_collections_total` | Counter | `service` (Go) / `service, generation` (Py) | Py Go | **ext** | baseline — divergent, see #50345 |
+| `simsys_runtime_gc_pause_total_seconds` | Counter | `service` | Go | **ext** | baseline |
+| `simsys_runtime_goroutines` | Gauge | `service` | Go | **ext** | baseline |
+| `simsys_scrape_duration_seconds` | Gauge | `service` | Py Go | **ext** | baseline |
+| `simsys_scrape_errors_total` | Counter | `service` | Py Go | **ext** | baseline |
+
+Tier **core** is guaranteed in every runtime with the declared type and label
+names -- a `$service`-templated dashboard may rely on it unconditionally.
+Tier **ext** is runtime-specific; the Runtimes column is authoritative and a
+panel using one must tolerate its absence.
+
+<!-- END GENERATED CATALOGUE -->
 
 ### Cross-runtime caveat: `simsys_process_memory_bytes.type`
 

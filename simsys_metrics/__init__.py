@@ -28,7 +28,7 @@ from ._registry import make_counter, make_gauge, make_histogram
 from .helpers import safe_label
 from .progress import ProgressOpts, ProgressTracker, track_progress
 
-__version__ = "0.4.0"
+__version__ = "1.0.0"
 
 __all__ = [
     "install",

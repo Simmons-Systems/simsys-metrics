@@ -40,17 +40,44 @@ across runtimes.
 
 ## Install
 
-The Node package ships as a tarball attached to each `node-v*` GitHub Release. Pin to a release in `package.json`:
+Published to npm as [`@simsys/metrics`](https://www.npmjs.com/package/@simsys/metrics):
+
+```bash
+npm install @simsys/metrics
+```
 
 ```json
 {
   "dependencies": {
-    "@simsys/metrics": "https://github.com/Simmons-Systems/simsys-metrics/releases/download/node-v0.5.0/simsys-metrics-0.5.0.tgz"
+    "@simsys/metrics": "^1.0.0"
   }
 }
 ```
 
-Why a tarball URL instead of `git+https://.../simsys-metrics.git`? npm's git-install doesn't support subdirectories, and the Node package lives at [`node/`](.) inside a shared monorepo with the Python package. The tarball URL is the standard way to install a subdirectory package from git hosting — it's the same mechanism npm uses internally.
+#### Legacy: GitHub Release tarball
+
+Before 1.0.0 the package was distributed only as a tarball attached to each
+`node-v*` GitHub Release, and consumers pinned the asset URL directly:
+
+```json
+{
+  "dependencies": {
+    "@simsys/metrics": "https://github.com/Simmons-Systems/simsys-metrics/releases/download/node-v1.0.0/simsys-metrics-1.0.0.tgz"
+  }
+}
+```
+
+**This still works and is still published.** Every `node-v*` release continues
+to carry the `.tgz` asset, so existing pins keep resolving and nothing has to
+migrate on a deadline. The registry install is simply better: it resolves
+transitively, supports semver ranges, and carries build provenance.
+
+The tarball exists at all because npm's git-install does not support
+subdirectories, and the Node package lives at [`node/`](.) inside a monorepo
+shared with the Python package. That constraint is what made a plain
+`git+https://` dependency impossible, and it is why the URL carries two
+independently-editable version strings — the release tag and the filename —
+which is a documented footgun the version-consistency test now guards.
 
 ### Releasing (maintainers)
 

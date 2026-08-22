@@ -10,49 +10,46 @@ Per-language detail for the Node package lives in
 
 ## [Unreleased]
 
-- **CI** — the staticcheck job's Go toolchain and its staticcheck release are
-  now pinned as a matched pair by `tests/test_go_ci_staticcheck_pins.py`.
-  `install-go: false` plus `GOTOOLCHAIN=local` means staticcheck is built and
-  run with exactly the toolchain that job installs, so the version is bounded
-  on both sides — below staticcheck's own go.mod minimum it cannot build, above
-  the release's export-data ceiling every stdlib import fails. Moving one pin
-  without the other has broken the job three times (Renovate floated it in
-  `33db5b2` and `f7f90cd`; #80 raised it to 1.27.x against staticcheck 2026.1).
-  `renovate.json` already stops the bot; this stops a human, and it lives in the
-  pytest lane because the `go-ci.yml` jobs are not required status checks — a PR
-  can merge with staticcheck red, which is how #80 landed.
+Nothing yet.
 
-- **Python / Node / Go** — HTTP latency histogram buckets now extend past
-  10s: the schedule gains `15.0, 30.0, 60.0`, becoming
-  `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0`.
-  It previously stopped at `10.0`, so every request slower than that fell into
-  `+Inf` and `histogram_quantile` could never return more than 10 — p95 pinned
-  at exactly 10.00 for any service with a real tail. On the fleet, voicestudio
-  had **23.3%** of its requests above the ceiling (its true p95 was unknowable),
-  and a 15.0s alert threshold on another service was structurally unfirable as
-  a direct result. `JobBuckets` / job-duration buckets are unchanged — they
-  already ran to 300s. New cross-language tests pin the schedule (it was
-  previously unpinned in all three lanes, which is how the three could drift
-  and how the ceiling went unnoticed).
-  **Operational note:** buckets are baked in at instrumentation time, so this
-  only takes effect for a service once it upgrades and redeploys. During a
-  partial rollout, a service running mixed versions across replicas will emit
-  inconsistent `le` sets; `sum by (service, le)` over that is non-monotonic and
-  can yield nonsense quantiles until the rollout completes. Upgrade a service's
-  replicas together. Adds ~3 series per label combination (fleet baseline was
-  6,120 series for this metric family, so roughly +25%).
-  **Release status:** shipped for Python in `python-v0.4.0`. Node and Go carry
-  the same schedule on `main` but are **not yet released** — they ship with
-  their next respective tags.
-- **Go** — **BREAKING**: `TrackProgress` now returns
-  `(ProgressTracker, error)` instead of panicking on invalid opts
-  (empty Operation, negative Total/Window/Interval). Opts frequently
-  come from runtime config, so misconfiguration is now handleable.
-  Ships as `go/v0.3.1` -- the `go/v0.3.0` tag was pushed but never released
-  or documented, and is superseded rather than re-pointed because
-  proxy.golang.org caches module tags immutably (Redmine #50032; details in
-  go/CHANGELOG.md). `Inc`/`SetTotal` still panic on negative
-  values (programmer error, not runtime input).
+## [python-v1.0.0] — 2026-08-22
+
+**All three packages align on 1.0.0 from this release. The version number is
+now the CONTRACT version, and it means the same thing in every lane.**
+
+Before this, the lanes drifted independently — Python 0.4.0, Node 0.5.0, Go
+0.3.1 — so "which version am I on" had three different answers and none of
+them told you which metric catalogue you were getting. Now `1.0.0` in any
+lane means the same `spec/metrics-contract.json`: the same metric names,
+types, label sets, enums and bucket schedules.
+
+Aligned at the first registry publication deliberately. Version numbers on a
+package index cannot be reused, so this is the one moment the renumbering is
+free.
+
+### Why 1.0.0 rather than another 0.x
+
+The package has ~25 consumers in production, a machine-readable contract, and
+cross-language conformance tests. 0.x signals "the shape may still move
+arbitrarily", which stopped being true. 1.0.0 is the accurate signal, and it
+makes the next breaking change say so in the version rather than hiding in a
+minor bump.
+
+**The pending poller-behaviour change (#50319) and the GC label-schema fix
+(#50345) are therefore 2.0.0, not 1.1.0.** Both change an emitted series, and
+under semver that is a major.
+
+### Added
+
+- **Published to PyPI.** `pip install simsys-metrics`
+- `spec/metrics-contract.json` — machine-readable catalogue, with per-lane
+  conformance tests asserting against a live registry.
+- Shipped Grafana dashboard and Prometheus alert pack under `dashboards/`.
+
+### Changed
+
+- No behavioural change from the previous release in this lane. This is a
+  renumbering plus packaging; every emitted series is byte-identical.
 
 ## [python-v0.4.0] — 2026-08-05 — Python only
 

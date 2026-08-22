@@ -26,9 +26,9 @@ Grafana dashboard works across every runtime:
 
 | Package | Path | Languages | Tag prefix | Install |
 |---------|------|-----------|------------|---------|
-| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v0.4.0`) | `pip install ... @ git+https://...@python-v0.4.0` |
-| [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v0.5.0`) | GitHub Release tarball URL |
-| [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v0.3.1`) | `go get ...@v0.3.1` |
+| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v1.0.0`) | `pip install simsys-metrics` (PyPI) |
+| [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v1.0.0`) | `npm install @simsys/metrics` (npm) |
+| [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v1.0.0`) | `go get ...@v1.0.0` |
 
 The Python package remains at the repo root for pip git-install compatibility. The Node and Go packages live under [`node/`](node/) and [`go/`](go/) respectively — see each subdirectory's README for install details.
 
@@ -66,10 +66,10 @@ up automatically.
 
 ```bash
 # FastAPI service
-pip install "simsys-metrics[fastapi] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.4.0"
+pip install "simsys-metrics[fastapi]"
 
 # Flask service
-pip install "simsys-metrics[flask] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.4.0"
+pip install "simsys-metrics[flask]"
 ```
 
 Pin to the tag. Bumping a consumer means re-pointing this URL at a newer tag.
@@ -78,7 +78,7 @@ Pin to the tag. Bumping a consumer means re-pointing this URL at a newer tag.
 <summary>Pinning in <code>requirements.txt</code></summary>
 
 ```
-simsys-metrics[fastapi] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.4.0
+simsys-metrics[fastapi]==1.0.0
 ```
 
 Works in plain Docker builds — no SSH agent, no auth tokens required.

@@ -255,13 +255,30 @@ func (m *Metrics) Registry() *prometheus.Registry { return m.registry }
 // The handler records simsys_scrape_duration_seconds on each scrape and
 // increments simsys_scrape_errors_total on gather failures.
 func (m *Metrics) MetricsHandler() http.Handler {
-	inner := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{Registry: m.registry})
+	// scrapeErrors was declared and registered but NEVER incremented, while
+	// this doc comment claimed it was -- so it read 0 forever and an operator
+	// alerting on it had a permanently green signal from an unwired
+	// instrument (Redmine #50320). promhttp surfaces gather/encode failures
+	// through ErrorLog, which is the only hook that sees them; the handler
+	// itself returns nothing we can inspect.
+	inner := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
+		Registry: m.registry,
+		ErrorLog: scrapeErrorCounter{
+			inc: func() { m.scrapeErrors.WithLabelValues(m.service).Inc() },
+		},
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		inner.ServeHTTP(w, r)
 		m.scrapeDuration.WithLabelValues(m.service).Set(time.Since(start).Seconds())
 	})
 }
+
+// scrapeErrorCounter adapts promhttp.Logger to a counter increment. promhttp
+// calls Println once per gather or encode error.
+type scrapeErrorCounter struct{ inc func() }
+
+func (s scrapeErrorCounter) Println(...any) { s.inc() }
 
 // HTTPBuckets is the shared HTTP latency histogram bucket schedule.
 // Identical to Python/Node so cross-app dashboards align.

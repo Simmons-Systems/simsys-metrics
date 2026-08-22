@@ -251,7 +251,7 @@ export function statusBucket(statusCode: number | string): string {
     if (!Number.isFinite(code)) return "5xx";
   }
   if (code >= 100 && code < 600) {
-    // ⚡ Bolt: Fast path for valid HTTP status codes using math operation
+    // Fast path for valid HTTP status codes using math operation
     // rather than branching logic.
     return Math.floor(code / 100) + "xx";
   }
@@ -276,7 +276,7 @@ const ALLOWED_METHODS: ReadonlySet<string> = new Set([
 
 export function normalizeMethod(method: unknown): string {
   if (typeof method !== "string") return "OTHER";
-  // ⚡ Bolt: Fast path avoids allocating a new uppercase string if the input
+  // Fast path avoids allocating a new uppercase string if the input
   // method is already correctly capitalized and allowed.
   if (ALLOWED_METHODS.has(method)) return method;
   const upper = method.toUpperCase();

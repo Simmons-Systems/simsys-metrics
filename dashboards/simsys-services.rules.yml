@@ -1,0 +1,176 @@
+# Prometheus alert rules for services instrumented with simsys-metrics.
+#
+# Extracted from a production rule set that has been running across ~17
+# services, with fleet-specific thresholds and service names removed. The
+# engineering that survived the extraction — the minimum-rate guard, the
+# keep_firing_for rationale, and the `unless on(service)` join — is the part
+# worth copying; the numbers are starting points, not recommendations.
+#
+# SUBSTITUTE BEFORE USE:
+#   {{JOB}}   your Prometheus scrape job name for simsys-instrumented services
+#
+# Every expression templates on `service`, the label simsys-metrics guarantees
+# on every metric, so these rules work unmodified across a mixed
+# Python/Node/Go fleet.
+#
+# Per-service overrides: see the commented example under SimsysLatencySLO. A
+# service with a legitimately different profile (a proxy fronting slow
+# upstreams, a model server loading gigabytes) needs its own threshold rather
+# than an exemption, or the alert stops meaning anything for everyone else.
+
+groups:
+  - name: simsys-services
+    rules:
+      # 1. The service stopped being scraped at all.
+      - alert: SimsysAppDown
+        expr: up{job="{{JOB}}"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "simsys {{ $labels.instance }} is down"
+          description: >-
+            The scrape target has been unreachable for 5m. Either the process
+            is gone, the metrics endpoint stopped binding, or the network path
+            broke.
+
+      # 2. Scraping succeeds but the app stopped updating its metrics.
+      #
+      # A target can be UP and serving a stale exposition — a wedged worker, a
+      # metrics endpoint served by a proxy in front of a dead backend. Joining
+      # against build_info catches it: build_info disappears when the app that
+      # registered it is gone, while `up` still reports the socket answering.
+      - alert: SimsysMetricsEndpointStale
+        expr: |
+          (up{job="{{JOB}}"} == 1)
+          unless on(instance)
+          (simsys_build_info)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "simsys {{ $labels.instance }} scrapes OK but emits no build_info"
+          description: >-
+            The endpoint answers but simsys_build_info is absent, so the
+            simsys instrumentation is not running even though something is
+            serving the port. Check whether install() ran, or whether a proxy
+            is answering for a dead backend.
+
+      # 3. Elevated 5xx ratio.
+      - alert: SimsysHighErrorRate
+        expr: |
+          (
+            sum by (service) (rate(simsys_http_requests_total{status="5xx"}[10m]))
+            /
+            sum by (service) (rate(simsys_http_requests_total[10m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "simsys {{ $labels.service }} 5xx rate > 5% for 10m"
+          description: >-
+            More than 5% of requests returned 5xx over 10 minutes. `status` is
+            a bounded class label, so this is the whole 5xx family rather than
+            a specific code.
+
+      # 4. p95 latency SLO.
+      #
+      # Two techniques here are worth keeping regardless of your thresholds:
+      #
+      # MINIMUM-RATE GUARD (`and on(service) ... > 0.01`). Without it, a
+      # service receiving almost no traffic produces a p95 computed from a
+      # handful of samples, which swings wildly and fires constantly. The guard
+      # says "only evaluate this SLO for services actually serving traffic".
+      #
+      # keep_firing_for. `for` gates the ONSET only — resolution is immediate
+      # the moment the expression stops matching. A service sitting near its
+      # threshold therefore re-alerts on every dip, producing a stream of
+      # firing/resolved pairs for one ongoing problem. keep_firing_for holds
+      # the alert open through brief recoveries so one incident is one alert.
+      #
+      # PER-SERVICE OVERRIDE, if you need one — prefer this shape over
+      # exempting a service entirely:
+      #
+      #   (
+      #     histogram_quantile(0.95, sum by (service, le) (
+      #       rate(simsys_http_request_duration_seconds_bucket{service!="my-slow-svc"}[10m])
+      #     )) > 2.0
+      #   )
+      #   or
+      #   (
+      #     histogram_quantile(0.95, sum by (service, le) (
+      #       rate(simsys_http_request_duration_seconds_bucket{service="my-slow-svc"}[10m])
+      #     )) > 8.0
+      #   )
+      #
+      # NOTE ON BUCKETS: histogram_quantile can never return a value above the
+      # highest bucket bound. The schedule runs to 60s, so a threshold above
+      # that is structurally unfirable — this exact mistake shipped once, with
+      # a 15s threshold against a schedule that stopped at 10s.
+      - alert: SimsysLatencySLO
+        expr: |
+          (
+            histogram_quantile(
+              0.95,
+              sum by (service, le) (rate(simsys_http_request_duration_seconds_bucket[10m]))
+            ) > 2.0
+          )
+          and on(service)
+          (
+            sum by (service) (rate(simsys_http_request_duration_seconds_count[10m])) > 0.01
+          )
+        for: 15m
+        keep_firing_for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "simsys {{ $labels.service }} p95 latency > 2s"
+          description: >-
+            p95 request latency exceeded 2s for 15 minutes, on a service
+            serving more than 0.01 req/s. Adjust the threshold per service
+            rather than removing the rule if this is expected.
+
+      # 5. Resident memory ceiling.
+      #
+      # type="rss" is REQUIRED, not optional. It is the only memory type every
+      # runtime emits: Python and Go also emit "vms", Node emits "heapUsed",
+      # "heapTotal" and "external". Without the filter this sums overlapping
+      # series on Node (heapUsed ⊂ heapTotal ⊂ rss) and silently
+      # double-counts.
+      - alert: SimsysHighMemory
+        expr: |
+          simsys_process_memory_bytes{type="rss"} > 2147483648
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "simsys {{ $labels.service }} RSS > 2 GiB"
+          description: >-
+            Resident memory has exceeded 2 GiB for 15 minutes. Services with a
+            legitimately large footprint (model servers, in-memory caches)
+            want their own threshold rather than an exemption.
+
+      # 6. A target silently left the scrape config.
+      #
+      # This is the rule that catches a whole class of invisible failure: a
+      # service removed from service discovery does not alert as DOWN, it
+      # simply stops existing. `up` has nothing to be 0 about. Comparing
+      # against an offset catches the disappearance itself.
+      #
+      # The 2h offset is deliberately longer than any planned maintenance
+      # window, so a routine restart does not trip it.
+      - alert: SimsysTargetVanished
+        expr: |
+          up{job="{{JOB}}"} offset 2h
+          unless
+          up{job="{{JOB}}"}
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "simsys target {{ $labels.instance }} vanished from discovery"
+          description: >-
+            This target was being scraped 2 hours ago and is no longer in the
+            scrape config at all. It was removed from service discovery rather
+            than going down — check whether that was intentional.

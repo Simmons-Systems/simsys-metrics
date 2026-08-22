@@ -20,6 +20,11 @@ from __future__ import annotations
 from typing import Optional
 
 from ._baseline import get_service, set_service, track_job, track_pool, track_queue
+
+# Public extension point for custom metrics. The README and CONTRIBUTING
+# both direct callers here; re-exported so they no longer have to reach
+# into the private `_registry` module to follow their own docs (#50324).
+from ._registry import make_counter, make_gauge, make_histogram
 from .helpers import safe_label
 from .progress import ProgressOpts, ProgressTracker, track_progress
 
@@ -34,6 +39,9 @@ __all__ = [
     "ProgressOpts",
     "ProgressTracker",
     "safe_label",
+    "make_counter",
+    "make_gauge",
+    "make_histogram",
     "get_service",
     "set_service",
     "__version__",

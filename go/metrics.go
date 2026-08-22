@@ -212,6 +212,15 @@ func Install(opts InstallOpts) (*Metrics, error) {
 		"Time taken to generate the /metrics response.",
 		[]string{"service"},
 	)
+	// Initialise the error counter to 0 so the series exists before the first
+	// error. A CounterVec creates no child until WithLabelValues is called, so
+	// without this the metric is ABSENT until something breaks -- and
+	// rate(simsys_scrape_errors_total[5m]) over an absent series returns
+	// nothing rather than 0, which means the natural "errors started" alert
+	// cannot fire on the transition that matters. Same class as the counter
+	// never being incremented at all (#50320): an error signal you cannot
+	// alert on is not an error signal.
+	m.scrapeErrors.WithLabelValues(opts.Service).Add(0)
 
 	// Custom process collector reading /proc/self. Idempotent on the same
 	// registry: if Install was called before with this registry, reuse the
@@ -255,13 +264,30 @@ func (m *Metrics) Registry() *prometheus.Registry { return m.registry }
 // The handler records simsys_scrape_duration_seconds on each scrape and
 // increments simsys_scrape_errors_total on gather failures.
 func (m *Metrics) MetricsHandler() http.Handler {
-	inner := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{Registry: m.registry})
+	// scrapeErrors was declared and registered but NEVER incremented, while
+	// this doc comment claimed it was -- so it read 0 forever and an operator
+	// alerting on it had a permanently green signal from an unwired
+	// instrument (Redmine #50320). promhttp surfaces gather/encode failures
+	// through ErrorLog, which is the only hook that sees them; the handler
+	// itself returns nothing we can inspect.
+	inner := promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{
+		Registry: m.registry,
+		ErrorLog: scrapeErrorCounter{
+			inc: func() { m.scrapeErrors.WithLabelValues(m.service).Inc() },
+		},
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		inner.ServeHTTP(w, r)
 		m.scrapeDuration.WithLabelValues(m.service).Set(time.Since(start).Seconds())
 	})
 }
+
+// scrapeErrorCounter adapts promhttp.Logger to a counter increment. promhttp
+// calls Println once per gather or encode error.
+type scrapeErrorCounter struct{ inc func() }
+
+func (s scrapeErrorCounter) Println(...any) { s.inc() }
 
 // HTTPBuckets is the shared HTTP latency histogram bucket schedule.
 // Identical to Python/Node so cross-app dashboards align.

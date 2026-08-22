@@ -46,7 +46,7 @@ http_request_duration_seconds = make_histogram(
 
 def status_bucket(status_code: int | str) -> str:
     """Map a raw HTTP status to its class string (``2xx`` / ``3xx`` / ...)."""
-    # ⚡ Bolt: Check strict int type before try/except block. Ordering 2xx before
+    # Check strict int type before try/except block. Ordering 2xx before
     # 1xx optimizes the most common valid path.
     if type(status_code) is int:
         if 200 <= status_code < 300:
@@ -99,7 +99,7 @@ def normalize_method(method: object) -> str:
     else ``OTHER``. Non-string inputs also return ``OTHER`` defensively.
     """
     if type(method) is str:
-        # ⚡ Bolt: Fast path avoids allocating a new uppercase string if the input
+        # Fast path avoids allocating a new uppercase string if the input
         # method is already correctly capitalized and allowed.
         if method in _ALLOWED_METHODS:
             return method

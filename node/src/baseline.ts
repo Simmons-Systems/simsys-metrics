@@ -18,10 +18,19 @@ import {
   poolMax,
 } from "./registry.js";
 
+/**
+ * A poller handle. Structurally a NodeJS.Timeout with `stop()` attached, so
+ * `clearInterval(handle)` keeps working byte-identically for callers written
+ * against the old signature, and existing `NodeJS.Timeout` annotations stay
+ * assignable. Prefer `stop()`: it is idempotent AND removes the handle from
+ * the live set, which `clearInterval` cannot do.
+ */
+export type PollerHandle = NodeJS.Timeout & { stop(): void };
+
 interface SimsysBaselineState {
   service: string | null;
-  queueTimers: NodeJS.Timeout[];
-  poolTimers: NodeJS.Timeout[];
+  queueTimers: Set<NodeJS.Timeout>;
+  poolTimers: Set<NodeJS.Timeout>;
 }
 
 declare global {
@@ -31,9 +40,50 @@ declare global {
 
 const _state: SimsysBaselineState = (globalThis.__simsysMetricsBaselineState ??= {
   service: null,
-  queueTimers: [],
-  poolTimers: [],
+  queueTimers: new Set(),
+  poolTimers: new Set(),
 });
+
+// A caller who only ever calls clearInterval() stops the polling but cannot
+// remove the handle from the set -- undetectable from in here. Warn once when
+// a set grows past a threshold no legitimate app reaches, naming the tracker
+// so the leak is actionable rather than merely reported. This is the exact
+// symptom Python's 0.3.6 changelog described when it deleted _QUEUE_THREADS:
+// "apps that re-init queue trackers in factories".
+const _LIVE_TRACKER_WARN_AT = 64;
+const _warnedSets = new WeakSet<Set<NodeJS.Timeout>>();
+
+function _attachStop(
+  timer: NodeJS.Timeout,
+  set: Set<NodeJS.Timeout>,
+  kind: string,
+  name: string,
+): PollerHandle {
+  set.add(timer);
+  if (set.size > _LIVE_TRACKER_WARN_AT && !_warnedSets.has(set)) {
+    _warnedSets.add(set);
+    console.warn(
+      `[simsys-metrics] ${set.size} live ${kind} trackers (most recent: ` +
+        `${JSON.stringify(name)}). Handles are only released by calling ` +
+        `.stop() on the value ${kind === "queue" ? "trackQueue" : "trackPool"}() ` +
+        `returns; clearInterval() stops polling but leaks the handle.`,
+    );
+  }
+  let stopped = false;
+  const handle = timer as PollerHandle;
+  handle.stop = () => {
+    if (stopped) return;
+    stopped = true;
+    clearInterval(timer);
+    set.delete(timer);
+  };
+  return handle;
+}
+
+/** Live tracker counts. Test hook — not part of the public API. */
+export function _liveTrackerCounts(): { queue: number; pool: number } {
+  return { queue: _state.queueTimers.size, pool: _state.poolTimers.size };
+}
 
 /**
  * Set the process-wide service label. Called by install().
@@ -107,13 +157,16 @@ export interface TrackQueueOpts {
  * Poll ``depthFn()`` every ``intervalMs`` (default 5000) and update the
  * ``simsys_queue_depth`` gauge for the given queue name.
  *
- * Returns the interval handle. Safe to ignore; call `.unref()` yourself if
- * you need the process to exit while the timer is pending.
+ * Returns a {@link PollerHandle}: a NodeJS.Timeout carrying an idempotent
+ * `stop()`. Call `stop()` when the queue goes away -- it clears the interval
+ * and releases the handle. `clearInterval(handle)` still works but leaks the
+ * handle for the life of the process, which is the bug this shape fixes
+ * (Redmine #50318). Already `.unref()`ed, so it never holds the process open.
  */
 export function trackQueue(
   name: string,
   opts: TrackQueueOpts,
-): NodeJS.Timeout {
+): PollerHandle {
   const service = getService();
   const intervalMs = opts.intervalMs ?? 5000;
   // Reject intervalMs <= 0: setInterval(..., 0) creates a hot loop that
@@ -147,8 +200,7 @@ export function trackQueue(
   if (typeof timer.unref === "function") {
     timer.unref();
   }
-  _state.queueTimers.push(timer);
-  return timer;
+  return _attachStop(timer, _state.queueTimers, "queue", name);
 }
 
 // -------- trackJob --------
@@ -288,8 +340,7 @@ export function trackPool(
   if (typeof timer.unref === "function") {
     timer.unref();
   }
-  _state.poolTimers.push(timer);
-  return timer;
+  return _attachStop(timer, _state.poolTimers, "pool", name);
 }
 
 // -------- safeLabel --------
@@ -316,12 +367,8 @@ export function safeLabel(
 
 export function _resetForTests(): void {
   _state.service = null;
-  while (_state.queueTimers.length) {
-    const t = _state.queueTimers.pop();
-    if (t) clearInterval(t);
-  }
-  while (_state.poolTimers.length) {
-    const t = _state.poolTimers.pop();
-    if (t) clearInterval(t);
-  }
+  for (const t of _state.queueTimers) clearInterval(t);
+  _state.queueTimers.clear();
+  for (const t of _state.poolTimers) clearInterval(t);
+  _state.poolTimers.clear();
 }

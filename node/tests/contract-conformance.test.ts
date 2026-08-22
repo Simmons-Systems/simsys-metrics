@@ -89,11 +89,8 @@ describe("metric contract conformance (node)", () => {
     // Drive every opt-in helper so its labels are observable. A collector with
     // no samples exposes no label names, and a label comparison against zero
     // series passes without testing anything.
-    // clearInterval rather than .stop(): the PollerHandle with stop() lands in
-    // the Phase-B poller-lifecycle change (#50318), and this conformance test
-    // must run on the branch that introduces the contract, not depend on it.
-    clearInterval(trackQueue("cq", { depthFn: () => 1, intervalMs: 3_600_000 }));
-    clearInterval(trackPool("cp", { activeFn: () => 1, idleFn: () => 1, intervalMs: 3_600_000 }));
+    trackQueue("cq", { depthFn: () => 1, intervalMs: 3_600_000 }).stop();
+    trackPool("cp", { activeFn: () => 1, idleFn: () => 1, intervalMs: 3_600_000 }).stop();
     await trackJob("cj").run(async () => undefined);
     trackProgress({ operation: "cop", total: 1, windowMs: 60_000, intervalMs: 3_600_000 }).stop();
 

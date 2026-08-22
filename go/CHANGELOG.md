@@ -5,6 +5,24 @@ All notable changes to `simsys-metrics-go` will be documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+> **A `go/v0.3.0` tag exists on `main` and is deliberately NOT documented as a
+> release here.** It was pushed on 2026-07-06 (`8636e8c`) carrying substantive
+> work — `TrackPool` plus the four `simsys_pool_*` gauges, process/runtime
+> metrics, `simsys_scrape_*`, a fuzz target, and a **breaking** `TrackProgress`
+> signature change from `ProgressTracker` to `(ProgressTracker, error)` — but no
+> GitHub release was ever created for it, because the tag predates the
+> tag-routing fix in `release.yml`. It also predates the extended HTTP bucket
+> schedule, so pinning it would *regress* the p95 ceiling fix that Python
+> already shipped.
+>
+> **Do not pin `go/v0.3.0`.** The newest release consumers should use is
+> `go/v0.2.11` below. Redmine #50032 tracks superseding the tag rather than
+> deleting or re-pointing it — `proxy.golang.org` caches module tags
+> immutably, so a re-pointed tag hands a checksum mismatch to anyone who
+> already fetched it.
+
 ## [go/v0.2.11] — 2026-04-29
 
 ### Changed (BREAKING)

@@ -26,7 +26,7 @@ Grafana dashboard works across every runtime:
 
 | Package | Path | Languages | Tag prefix | Install |
 |---------|------|-----------|------------|---------|
-| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v0.3.11`) | `pip install ... @ git+https://...@python-v0.3.11` |
+| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v0.4.0`) | `pip install ... @ git+https://...@python-v0.4.0` |
 | [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v0.5.0`) | GitHub Release tarball URL |
 | [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v0.2.11`) | `go get ...@v0.2.11` |
 
@@ -66,10 +66,10 @@ up automatically.
 
 ```bash
 # FastAPI service
-pip install "simsys-metrics[fastapi] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.3.11"
+pip install "simsys-metrics[fastapi] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.4.0"
 
 # Flask service
-pip install "simsys-metrics[flask] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.3.11"
+pip install "simsys-metrics[flask] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.4.0"
 ```
 
 Pin to the tag. Bumping a consumer means re-pointing this URL at a newer tag.
@@ -78,7 +78,7 @@ Pin to the tag. Bumping a consumer means re-pointing this URL at a newer tag.
 <summary>Pinning in <code>requirements.txt</code></summary>
 
 ```
-simsys-metrics[fastapi] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.3.11
+simsys-metrics[fastapi] @ git+https://github.com/Simmons-Systems/simsys-metrics.git@python-v0.4.0
 ```
 
 Works in plain Docker builds — no SSH agent, no auth tokens required.

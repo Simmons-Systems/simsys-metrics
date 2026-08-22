@@ -89,6 +89,32 @@ def set_service(service: Optional[str]) -> None:
     """
     global _SERVICE
     if service is not None:
+        # A SECOND install() with a different service silently re-labels every
+        # series (#50321). The per-app idempotence guard in fastapi.py/flask.py
+        # is keyed on the app OBJECT, so install(app_a, "foo") followed by
+        # install(app_b, "bar") never reaches it: trackers started for app_a
+        # begin emitting under "bar" and app_a's process metrics vanish.
+        #
+        # ERROR, not WARNING -- this corrupts every series in the process, and
+        # it is silent today at all three downstream sites (_process.py's
+        # service_swap logs nothing at all). Behaviour is unchanged for now:
+        # the fleet is swept for this marker before it becomes an exception in
+        # the next major.
+        #
+        # Guarded on `_SERVICE is not None` so install-rollback's
+        # set_service(None) and first-install both stay quiet.
+        prior = _peek_service()
+        if prior is not None and prior != service.strip():
+            _log.error(
+                "simsys-metrics: SERVICE IDENTITY CHANGE %r -> %r. One service "
+                "identity per process is the contract. Trackers already "
+                "started will now emit under the NEW service, and the prior "
+                "service's process metrics disappear. If you genuinely need "
+                "two identities, run two processes. This will raise in the "
+                "next major version.",
+                prior,
+                service.strip(),
+            )
         stripped = service.strip()
         if stripped != service:
             _log.warning(
@@ -167,6 +193,25 @@ class PollerThread(threading.Thread):
                 return
 
 
+def _warn_empty_name(kind: str, name: object) -> None:
+    """Warn-only guard for an empty queue/pool name (#50322).
+
+    An empty name emits a series labelled queue="" / pool="", which no
+    dashboard template matches and which is indistinguishable from a
+    mislabelled one. Node has the same gap; Go validates. Warn now, raise in
+    the next major -- the series is still emitted so no deployed consumer
+    breaks on upgrade.
+    """
+    if not isinstance(name, str) or not name.strip():
+        _log.warning(
+            "simsys-metrics: track_%s name must be a non-empty string, got %r. "
+            "The series is still emitted for backward compatibility; this will "
+            "raise ValueError in the next major version.",
+            kind,
+            name,
+        )
+
+
 def track_queue(
     queue: str,
     depth_fn: Callable[[], int],
@@ -193,6 +238,7 @@ def track_queue(
             f"track_queue: interval must be a positive finite number of "
             f"seconds, got {interval!r}"
         )
+    _warn_empty_name("queue", queue)
     service = get_service()
 
     seen_failure = False  # log misbehaving callbacks once, not every tick
@@ -364,6 +410,7 @@ def track_pool(
             f"track_pool: interval must be a positive finite number of "
             f"seconds, got {interval!r}"
         )
+    _warn_empty_name("pool", name)
     service = get_service()
 
     if max_size is not None:

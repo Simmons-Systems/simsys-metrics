@@ -31,7 +31,8 @@ describe("partial install rollback", () => {
     app.get = ((...args: any[]) => {
       calls += 1;
       if (calls === 1) throw new Error("forced get failure");
-      return realGet(...args);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (realGet as any)(...args);
     }) as typeof app.get;
 
     expect(() =>

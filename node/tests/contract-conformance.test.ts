@@ -105,7 +105,7 @@ describe("metric contract conformance (node)", () => {
           if (k !== "le" && k !== "quantile") labels.add(k);
         }
       }
-      emitted.set(m.name, { type: m.type as string, labels });
+      emitted.set(m.name, { type: String(m.type), labels });
     }
   });
 

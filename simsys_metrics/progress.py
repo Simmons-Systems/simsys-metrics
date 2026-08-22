@@ -112,6 +112,23 @@ class ProgressTracker:
                 f"got {opts.interval!r}"
             )
 
+        # Empty operation: warn-only for now (#50322). Go rejects it outright
+        # (go/progress.go:65) and Node throws (node/src/progress.ts:56), so
+        # Python is the outlier -- ProgressOpts(operation="") silently emits an
+        # operation="" series that no dashboard template matches. The message
+        # text is deliberately identical to the other two lanes so promoting
+        # this to a ValueError in the next major is a one-line change with no
+        # wording drift.
+        if not isinstance(opts.operation, str) or not opts.operation.strip():
+            _log.warning(
+                "simsys-metrics: track_progress opts.operation must be a "
+                "non-empty string, got %r. The series is still emitted with "
+                "operation=%r for backward compatibility; this will raise "
+                "ValueError in the next major version.",
+                opts.operation,
+                opts.operation,
+            )
+
         self._opts = opts
         self._service = get_service()
         self._lock = threading.Lock()

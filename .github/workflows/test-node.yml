@@ -50,5 +50,11 @@ jobs:
       - name: Run vitest
         run: npm test
 
+      # Typechecks src AND tests. tsconfig.json excludes tests/ because it
+      # drives the build, which meant `tsc` never looked at a test file --
+      # and a test calling an API the .d.ts did not declare compiled clean.
+      - name: Typecheck (src + tests)
+        run: npm run typecheck
+
       - name: Pack tarball (smoke test)
         run: npm pack --dry-run

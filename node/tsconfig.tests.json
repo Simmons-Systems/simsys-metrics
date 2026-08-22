@@ -1,0 +1,21 @@
+{
+  // Typecheck the TESTS as well as src.
+  //
+  // tsconfig.json deliberately excludes tests/ because it drives the BUILD,
+  // and test files must not land in dist/. The consequence was that
+  // `tsc --noEmit` never typechecked a single test file -- so a test calling
+  // an API the .d.ts did not declare compiled clean. That is exactly how
+  // trackPool shipped returning PollerHandle at runtime while its emitted
+  // declaration still said NodeJS.Timeout: the leak fix worked, but a
+  // TypeScript consumer calling .stop() on a pool handle got a compile error.
+  //
+  // rootDir is overridden because tests/ sits outside src/, and noEmit means
+  // nothing is written regardless.
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist"],
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  }
+}

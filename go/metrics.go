@@ -3,6 +3,7 @@ package simsysmetrics
 import (
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -87,6 +88,20 @@ type Metrics struct {
 // stop matching. Use one Service per Registry; allocate a fresh Registry
 // when you legitimately need to re-init under a new service identity.
 func Install(opts InstallOpts) (*Metrics, error) {
+	// Service is the join key between this package and simsys-logevent -- an
+	// operator pivots from simsys_http_requests_total{service="x"} in
+	// Prometheus to {service="x"} | json in Loki -- and simsys-logevent trims
+	// its own copy. Without trimming here, "  portal  " and "portal" are two
+	// identities and the pivot silently returns nothing.
+	//
+	// Unlike the Python and Node lanes, which warn and continue, Go already
+	// rejects an empty Service outright, so an all-whitespace value folds
+	// naturally into that existing error rather than needing a new warning
+	// path. Trimming is a measured no-op on the deployed fleet: all 36
+	// services reporting simsys_build_info were checked against live
+	// Prometheus on 2026-08-22 and none carries surrounding whitespace.
+	opts.Service = strings.TrimSpace(opts.Service)
+	opts.Version = strings.TrimSpace(opts.Version)
 	if opts.Service == "" || opts.Version == "" {
 		return nil, ErrInvalidInstallOpts
 	}

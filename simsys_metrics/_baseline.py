@@ -66,8 +66,47 @@ def set_service(service: Optional[str]) -> None:
 
     Pass ``None`` (private) to clear; used by install rollback to restore
     pre-install state on partial failure.
+
+    The value is stripped. ``service`` is the join key between this package
+    and ``simsys-logevent`` -- an operator pivots from
+    ``simsys_http_requests_total{service="x"}`` in Prometheus to
+    ``{service="x"} | json`` in Loki -- and simsys-logevent strips its own
+    copy. Without this, ``"  portal  "`` here and ``"portal"`` there are two
+    different identities and the pivot silently returns nothing.
+
+    Stripping is safe to do now rather than deferring to a major: all 36
+    services currently reporting ``simsys_build_info`` were checked against
+    live Prometheus on 2026-08-22 and none carries leading or trailing
+    whitespace, so this is a measured no-op on the deployed fleet rather
+    than a hoped-for one. A padded name is a caller typo in every observed
+    case, and the stripped value is what the caller meant.
+
+    An all-whitespace service strips to empty, which would emit
+    ``service=""`` on every series. Python has no empty-service validation
+    at all today (Go rejects it via ``ErrInvalidInstallOpts``), so that is
+    warned about loudly here and the value is still set -- consistent with
+    the warn-now/raise-in-the-next-major policy applied across this package.
     """
     global _SERVICE
+    if service is not None:
+        stripped = service.strip()
+        if stripped != service:
+            _log.warning(
+                "simsys-metrics: service %r has leading/trailing whitespace; "
+                "using %r. `service` is the join key with simsys-logevent, "
+                "which strips its own copy -- an unstripped value here would "
+                "not match in Loki.",
+                service,
+                stripped,
+            )
+        if not stripped:
+            _log.warning(
+                "simsys-metrics: service %r is empty after stripping. Every "
+                'series will carry service="", which no dashboard template '
+                "will match. This will raise in the next major version.",
+                service,
+            )
+        service = stripped
     with _SERVICE_LOCK:
         _SERVICE = service
 

@@ -15,7 +15,20 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze
+    # Named explicitly on `language` ALONE, deliberately. GitHub derives a
+    # matrix job's name from every matrix key, so adding `build-mode` renamed
+    # this job from `Analyze (actions)` to `Analyze (actions, none)` -- and
+    # `Analyze (actions)` is a REQUIRED status check in the `main-protection`
+    # ruleset. A required check that no job reports is never satisfied, so
+    # that rename would have made `main` permanently unmergeable, with the
+    # error surfacing only at merge time rather than as a red check. Pinning
+    # the name keeps the existing gate reporting and adds the three new
+    # languages beside it.
+    #
+    # Consequence for whoever adds the new jobs to the required list: the
+    # contexts are `Analyze (python)`, `Analyze (go)` and
+    # `Analyze (javascript-typescript)` -- no build-mode suffix.
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       security-events: write

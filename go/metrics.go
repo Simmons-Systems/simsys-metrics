@@ -212,6 +212,15 @@ func Install(opts InstallOpts) (*Metrics, error) {
 		"Time taken to generate the /metrics response.",
 		[]string{"service"},
 	)
+	// Initialise the error counter to 0 so the series exists before the first
+	// error. A CounterVec creates no child until WithLabelValues is called, so
+	// without this the metric is ABSENT until something breaks -- and
+	// rate(simsys_scrape_errors_total[5m]) over an absent series returns
+	// nothing rather than 0, which means the natural "errors started" alert
+	// cannot fire on the transition that matters. Same class as the counter
+	// never being incremented at all (#50320): an error signal you cannot
+	// alert on is not an error signal.
+	m.scrapeErrors.WithLabelValues(opts.Service).Add(0)
 
 	// Custom process collector reading /proc/self. Idempotent on the same
 	// registry: if Install was called before with this registry, reuse the

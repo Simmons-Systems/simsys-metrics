@@ -1,0 +1,247 @@
+{
+  "$comment": [
+    "SINGLE SOURCE OF TRUTH for the simsys metric catalogue. Machine-readable",
+    "because three independent implementations of a supposedly identical",
+    "contract will drift, and prose cannot be executed.",
+    "",
+    "JSON rather than YAML, and this is forced rather than stylistic: the CI",
+    "requirements are hash-pinned and carry no PyYAML, so a YAML-reading test",
+    "passes on a dev box and fails in CI. JSON parses dependency-free in all",
+    "three lanes. JSON has no comments, so rationale lives in `$comment` and",
+    "`notes` string fields.",
+    "",
+    "WHAT READS THIS:",
+    "  tests/test_metrics_contract.py          (python lane, live registry)",
+    "  node/tests/contract-conformance.test.ts (node lane, live registry)",
+    "  go/contract_conformance_test.go         (go lane, live registry)",
+    "  tests/test_contract_cross_language_guard.py  (pytest lane -- the only",
+    "      lane in the repo's required-checks list, so cross-language",
+    "      invariants that must BLOCK a merge live there)",
+    "",
+    "HOW TO CHANGE A METRIC: edit this file first, then the three lanes. The",
+    "conformance tests read the expected values from here, so an",
+    "implementation-only change goes red. That is the point."
+  ],
+  "contract_version": "1.0.0",
+  "prefix": "simsys_",
+  "required_label": "service",
+
+  "notes_on_required_label": [
+    "`service` is mandatory on every metric and is the join key with",
+    "simsys-logevent: an operator pivots from",
+    "simsys_http_requests_total{service=\"x\"} in Prometheus to",
+    "{service=\"x\"} | json in Loki. Both packages trim it, so a padded",
+    "spelling cannot become a second identity.",
+    "One service identity per process (Python, Node) or per Registry (Go).",
+    "A consumer needing two identities must run two processes."
+  ],
+
+  "enums": {
+    "status_class": {
+      "values": ["1xx", "2xx", "3xx", "4xx", "5xx"],
+      "notes": "Status codes are collapsed to a class to bound cardinality. Out-of-range, non-numeric and negative inputs all fall to 5xx in every lane."
+    },
+    "job_outcome": {
+      "values": ["success", "error"],
+      "notes": "Closed set of exactly two. Deliberately no timeout/cancelled/panic -- a wider set is a cardinality decision, not a convenience."
+    },
+    "http_method": {
+      "values": ["GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH", "OTHER"],
+      "notes": "RFC 9110 methods plus PATCH, with OTHER as the overflow. An allowlist rather than passthrough: arbitrary methods once created unbounded series."
+    },
+    "memory_type_core": {
+      "values": ["rss"],
+      "notes": "The ONLY memory type every runtime emits. A cross-runtime dashboard panel must filter type=\"rss\" or it double-counts on Node, where heapUsed is a subset of heapTotal is a subset of rss."
+    }
+  },
+
+  "bucket_schedules": {
+    "http_request_duration_seconds": {
+      "bounds": [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 15.0, 30.0, 60.0],
+      "notes": "The 15/30/60 tail was added 2026-08-05. Before it the schedule stopped at 10.0, so every slower request fell into +Inf and histogram_quantile could never return more than 10 -- p95 was pinned at exactly 10.00 for any service with a real tail, and a 15s alert threshold was structurally unfirable. Buckets are baked in at instrumentation time, so a service only gets this after it upgrades and redeploys."
+    },
+    "job_duration_seconds": {
+      "bounds": [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300],
+      "notes": "Was unpinned by any test in all three lanes until this contract existed -- a second instance of the gap that caused the HTTP ceiling bug, found while writing this file."
+    }
+  },
+
+  "tiers": {
+    "core": "Guaranteed present in every runtime with the declared type and exact label set. A $service-templated dashboard may rely on these unconditionally.",
+    "extension": "Runtime-specific. The `runtimes` array is authoritative -- a dashboard panel using one must tolerate its absence. Coverage is genuinely three-valued (some metrics are in two of three lanes), which is why `runtimes` is an explicit list rather than a boolean."
+  },
+
+  "metrics": {
+    "simsys_build_info": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "version", "commit", "started_at"],
+      "help": "Service build information. Always equal to 1; read labels for actual data."
+    },
+    "simsys_http_requests_total": {
+      "type": "counter", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "method", "route", "status"],
+      "label_enums": { "status": "status_class", "method": "http_method" },
+      "help": "Total HTTP requests handled, bucketed by status class.",
+      "notes": "`route` is a TEMPLATE, never a literal path. Literal paths are the classic unbounded-cardinality mistake."
+    },
+    "simsys_http_request_duration_seconds": {
+      "type": "histogram", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "method", "route"],
+      "label_enums": { "method": "http_method" },
+      "buckets": "http_request_duration_seconds"
+    },
+    "simsys_queue_depth": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "queue"],
+      "samples": "opt-in via track_queue / trackQueue / TrackQueue"
+    },
+    "simsys_jobs_total": {
+      "type": "counter", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "job", "outcome"],
+      "label_enums": { "outcome": "job_outcome" },
+      "samples": "opt-in via track_job / trackJob / TrackJob"
+    },
+    "simsys_job_duration_seconds": {
+      "type": "histogram", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "job", "outcome"],
+      "label_enums": { "outcome": "job_outcome" },
+      "buckets": "job_duration_seconds",
+      "samples": "opt-in via track_job / trackJob / TrackJob"
+    },
+    "simsys_progress_processed_total": {
+      "type": "counter", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "operation"], "samples": "opt-in via track_progress"
+    },
+    "simsys_progress_remaining": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "operation"], "samples": "opt-in via track_progress"
+    },
+    "simsys_progress_rate_per_second": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "operation"], "samples": "opt-in via track_progress"
+    },
+    "simsys_progress_estimated_completion_timestamp": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "operation"], "samples": "opt-in via track_progress",
+      "notes": "0 when unknown."
+    },
+    "simsys_pool_active": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "pool"], "samples": "opt-in via track_pool"
+    },
+    "simsys_pool_idle": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "pool"], "samples": "opt-in via track_pool"
+    },
+    "simsys_pool_waiting": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "pool"], "samples": "opt-in via track_pool"
+    },
+    "simsys_pool_max": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "pool"], "samples": "opt-in via track_pool"
+    },
+    "simsys_process_cpu_seconds_total": {
+      "type": "counter", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service"]
+    },
+    "simsys_process_memory_bytes": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "type"],
+      "label_enums": { "type": "memory_type_core" },
+      "runtime_extra_enum_values": {
+        "python": ["vms"], "go": ["vms"],
+        "node": ["heapUsed", "heapTotal", "external"]
+      },
+      "notes": "Label NAMES match everywhere; the `type` VALUE set does not. Only rss is universal. Declared core because the metric and its labels are guaranteed -- the extra values are declared per runtime so a dashboard author can see the difference instead of discovering it."
+    },
+    "simsys_process_open_fds": {
+      "type": "gauge", "tier": "core", "runtimes": ["python", "node", "go"],
+      "labels": ["service"]
+    },
+    "simsys_scrape_duration_seconds": {
+      "type": "gauge", "tier": "extension", "runtimes": ["python", "go"],
+      "labels": ["service"]
+    },
+    "simsys_scrape_errors_total": {
+      "type": "counter", "tier": "extension", "runtimes": ["python", "go"],
+      "labels": ["service"],
+      "notes": "Was registered but never incremented in Go until #50320 -- it read 0 forever while its own doc comment claimed otherwise."
+    },
+    "simsys_process_threads": {
+      "type": "gauge", "tier": "extension", "runtimes": ["python", "go"],
+      "labels": ["service"]
+    },
+    "simsys_process_uptime_seconds": {
+      "type": "gauge", "tier": "extension", "runtimes": ["node"],
+      "labels": ["service"]
+    },
+    "simsys_runtime_gc_pause_total_seconds": {
+      "type": "counter", "tier": "extension", "runtimes": ["go"],
+      "labels": ["service"]
+    },
+    "simsys_runtime_goroutines": {
+      "type": "gauge", "tier": "extension", "runtimes": ["go"],
+      "labels": ["service"]
+    },
+    "simsys_runtime_gc_collections_total": {
+      "type": "counter", "tier": "extension", "runtimes": ["python", "go"],
+      "status": "divergent",
+      "ticket": "50345",
+      "current": {
+        "python": { "labels": ["service", "generation"] },
+        "go": { "labels": ["service"] }
+      },
+      "target": { "labels": ["service"] },
+      "notes": "The ONLY metric in the catalogue whose label NAMES differ by runtime, which is what makes it look unintended rather than designed. Python reports CPython's three GC generations separately; Go reports a single runtime.MemStats.NumGC cycle count. A panel with `by (generation)` returns empty for Go services, and summing across lanes compares different units. Declared as it actually behaves -- NOT as it should -- so the conformance tests assert something true and stay green. Declaring the target here instead would ship a permanently-red check, and a check that is always red stops carrying information. Resolving #50345 means editing `current` to match `target` and flipping `status` to `specified`, in the same commit as the code change."
+    }
+  },
+
+  "divergences": {
+    "$comment": [
+      "Every entry carrying status:divergent must appear here with a ticket.",
+      "This list is asserted against `expected_count` by the cross-language",
+      "guard, so adding a divergence is a deliberate edit to a NUMBER that a",
+      "reviewer sees -- not a line appearing in a list nobody reads. That is",
+      "what stops 'declare it divergent' becoming cheaper than fixing it."
+    ],
+    "expected_count": 1,
+    "entries": [
+      { "metric": "simsys_runtime_gc_collections_total", "ticket": "50345", "kind": "label-schema" }
+    ]
+  },
+
+  "behaviors": {
+    "$comment": "Semantics rather than shape -- the rules a JSON Schema cannot express. Same status/current/target vocabulary as metrics, one mechanism for both.",
+    "empty_operation_rejected": {
+      "status": "divergent", "ticket": "50322",
+      "current": { "python": "accepted, warns", "node": "throws", "go": "returns error" },
+      "target": "rejected in all three",
+      "notes": "Python emitted an operation=\"\" series. Warns as of #50322; raises in the next major."
+    },
+    "empty_service_rejected": {
+      "status": "divergent", "ticket": "50322",
+      "current": { "python": "accepted, warns", "node": "throws on falsy, warns on whitespace", "go": "returns ErrInvalidInstallOpts" },
+      "target": "rejected in all three"
+    },
+    "poller_failure_policy": {
+      "status": "divergent", "ticket": "50319",
+      "current": {
+        "python": "reports 0, warns once per tracker",
+        "node": "trackQueue reports 0 silently; trackPool keeps previous values",
+        "go": "recovers and warns"
+      },
+      "target": "preserve last known value, leave series absent on first-tick failure, count on simsys_collector_errors_total",
+      "notes": "Three policies in one package, one of which contradicted its own README. Changing an emitted value, so it ships in its own release."
+    },
+    "service_identity": {
+      "status": "divergent", "ticket": "50321",
+      "current": {
+        "python": "process-global, second install with a different service silently re-labels",
+        "node": "same via globalThis",
+        "go": "documented hazard, unenforced"
+      },
+      "target": "one identity per process (python, node) / per Registry (go); changing it is an error"
+    }
+  }
+}

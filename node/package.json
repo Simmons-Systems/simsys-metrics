@@ -3,6 +3,15 @@
   "version": "1.0.0",
   "description": "Drop-in Prometheus /metrics template for Node.js web apps (Express 5 + Bun/Hono + Next.js)",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Simmons-Systems/simsys-metrics.git",
+    "directory": "node"
+  },
+  "homepage": "https://github.com/Simmons-Systems/simsys-metrics/tree/main/node",
+  "bugs": {
+    "url": "https://github.com/Simmons-Systems/simsys-metrics/issues"
+  },
   "author": "Avicennasis",
   "main": "dist/cjs/index.js",
   "module": "dist/index.js",

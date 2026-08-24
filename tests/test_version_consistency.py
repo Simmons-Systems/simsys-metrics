@@ -372,3 +372,41 @@ def test_version_matches_the_contract_version() -> None:
         f"spec/metrics-contract.json declares contract_version {declared}. "
         f"These are the same number by definition."
     )
+
+
+# --------------------------------------------------------------------------
+# Publish metadata -- only ever validated at publish time otherwise
+# --------------------------------------------------------------------------
+
+
+def test_node_package_declares_repository_for_provenance() -> None:
+    """npm rejects a provenance publish whose repository.url does not match.
+
+    `npm publish --provenance` has the registry verify the sigstore bundle
+    against package.json, and a missing or empty repository.url fails with:
+
+        E422 ... "repository.url" is "", expected to match
+        "https://github.com/Simmons-Systems/simsys-metrics" from provenance
+
+    Nothing before the publish step catches it -- not the build, not vitest,
+    not `npm pack --dry-run`, not the typecheck. It surfaced only on a real
+    tag push, after three other publish faults had been cleared, which is the
+    most expensive possible moment to learn about a metadata field.
+    """
+    import json
+
+    pkg = json.loads((ROOT / "node" / "package.json").read_text(encoding="utf-8"))
+    repo = pkg.get("repository")
+    assert isinstance(repo, dict), (
+        "node/package.json has no `repository` object; npm provenance "
+        "publication will fail E422 at tag time"
+    )
+    url = repo.get("url", "")
+    assert "github.com/Simmons-Systems/simsys-metrics" in url, (
+        f"repository.url is {url!r}; provenance verification requires it to "
+        f"match the building repository"
+    )
+    assert repo.get("directory") == "node", (
+        "repository.directory must be 'node' -- the package lives in a "
+        "monorepo subdirectory, and npm uses this to resolve source links"
+    )

@@ -59,6 +59,12 @@ jobs:
           python -m pip install --require-hashes -r .github/requirements/build.txt
           python -m twine check --strict dist/*
 
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          generate_release_notes: true
+          files: dist/*
+
       - name: Publish to PyPI
         # Trusted Publishing (OIDC) -- no long-lived token in secrets. The
         # id-token: write permission this job already declares is what
@@ -66,11 +72,6 @@ jobs:
         # this repo + workflow filename + environment.
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
 
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          generate_release_notes: true
-          files: dist/*
 
   node-release:
     name: "Node: pack tarball, attest, release"
@@ -91,6 +92,14 @@ jobs:
           node-version: "24"
           cache: npm
           cache-dependency-path: node/package-lock.json
+          # REQUIRED for `npm publish` to authenticate. Setting NODE_AUTH_TOKEN
+          # alone does nothing: npm reads its credential from an .npmrc, and
+          # this input is what makes setup-node WRITE that .npmrc with an
+          # ${NODE_AUTH_TOKEN} placeholder. Without it the env var is simply
+          # ignored and publish fails ENEEDAUTH -- which is indistinguishable
+          # from a missing or invalid token, and sent us looking at the
+          # credential instead of the workflow.
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies (locked)
         run: npm ci
@@ -112,23 +121,25 @@ jobs:
         with:
           subject-path: "${{ runner.temp }}/simsys-metrics-*.tgz"
 
-      # --provenance is the natural continuation of the attestation above:
-      # npm records the same build-provenance link on the registry entry.
-      # Requires id-token: write, which this job already declares.
-      #
-      # The GitHub Release tarball asset below is KEPT deliberately. Existing
-      # consumers pin that URL directly, and registry publication must be
-      # purely additive -- nothing is forced to migrate on a deadline.
-      - name: Publish to npm
-        run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Create GitHub release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           generate_release_notes: true
           files: ${{ runner.temp }}/simsys-metrics-*.tgz
+
+      # --provenance is the natural continuation of the attestation above:
+      # npm records the same build-provenance link on the registry entry.
+      # Requires id-token: write, which this job already declares.
+      #
+      # Ordered AFTER the GitHub release deliberately. Existing consumers pin
+      # the .tgz asset URL directly, so registry publication must be purely
+      # additive -- if npm is down or the token lapses, the tarball those
+      # consumers depend on must still ship. Publishing first made the release
+      # hostage to the registry, which is backwards.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   go-release:
     # Go consumers fetch the module by tag via the module proxy — no

@@ -233,9 +233,7 @@ errors, upstream failures, etc.), hand-roll a counter via `make_counter` from th
 guarded registry:
 
 ```python
-from simsys_metrics._registry import make_counter
-
-from simsys_metrics import get_service
+from simsys_metrics import get_service, make_counter
 
 forecast_requests_total = make_counter(
     "simsys_forecast_requests_total",

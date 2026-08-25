@@ -410,3 +410,228 @@ def test_node_package_declares_repository_for_provenance() -> None:
         "repository.directory must be 'node' -- the package lives in a "
         "monorepo subdirectory, and npm uses this to resolve source links"
     )
+
+
+# --------------------------------------------------------------------------
+# Documented imports -- the READMEs are the package's public API surface
+# --------------------------------------------------------------------------
+#
+# #50324 shipped `make_counter` / `make_gauge` / `make_histogram` as public
+# exports because the README told users to import them and `__all__` did not
+# carry them. That defect is fixed, but nothing stopped it recurring: a README
+# can document any symbol it likes, and no test reads the READMEs.
+#
+# There are two ways for documentation and `__all__` to disagree, and only the
+# first was named in #50326:
+#
+#   1. the README documents a symbol that is NOT exported -- the #50324 shape;
+#      the copied snippet raises ImportError.
+#   2. the README documents a PRIVATE path for a symbol that IS exported --
+#      the snippet works, so nothing ever fails, while every consumer who
+#      copies it is coupled to `simsys_metrics._registry`. Renaming a private
+#      module is then a breaking change to code we told people to write.
+#
+# The second is the one the tree actually had (README.md:236,
+# `from simsys_metrics._registry import make_counter`, two lines above a
+# `from simsys_metrics import get_service` in the same snippet). It is the
+# more dangerous of the two precisely because it cannot fail loudly.
+
+
+IMPORT_LINE = re.compile(
+    r"^from\s+(simsys_metrics(?:\.[A-Za-z_][A-Za-z0-9_]*)*)\s+import\s+(.+)$",
+    re.MULTILINE,
+)
+
+
+def _documented_imports() -> list[tuple[str, str, str]]:
+    """Every `from simsys_metrics... import ...` in every tracked markdown file.
+
+    Returns `(relative_path, module, symbol)` triples, one per imported name,
+    so a single `import a, b` line yields two entries.
+
+    Markdown is scanned wholesale rather than only inside ```python fences:
+    a snippet outside a fence is still an instruction to the reader, and a
+    fence-aware parser would silently stop guarding the moment someone used
+    an indented code block instead.
+    """
+    out: list[tuple[str, str, str]] = []
+    for path in sorted(ROOT.rglob("*.md")):
+        if "node_modules" in path.parts or ".venv" in path.parts:
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        for module, names in IMPORT_LINE.findall(path.read_text(encoding="utf-8")):
+            for name in names.split("#")[0].split(","):
+                name = name.strip().split(" as ")[0].strip()
+                if name and name != "(":
+                    out.append((rel, module, name))
+    return out
+
+
+def test_documented_import_parser_finds_what_it_claims() -> None:
+    """Positive control for both assertions below.
+
+    Both checks are "no documented import violates X". If the parser matched
+    nothing they would both pass while reading no documentation at all -- the
+    exact failure mode `test_parsers_find_what_they_claim` exists to catch for
+    the version extractors. `install` is the package's single entry point
+    ("One install() call" -- README first paragraph), so a README set that
+    does not document it means the parser, not the README, is broken.
+    """
+    found = _documented_imports()
+    assert len(found) >= 3, (
+        f"only {len(found)} documented `from simsys_metrics import` statements "
+        f"found across all markdown; this guard is watching nothing. Fix the "
+        f"pattern -- do not delete the assertion."
+    )
+    symbols = {sym for _, _, sym in found}
+    assert "install" in symbols, (
+        f"the parser found {sorted(symbols)} but not `install`, the package's "
+        f"documented entry point. The parser is broken, not the docs."
+    )
+
+
+def test_documented_symbols_are_exported() -> None:
+    """Every symbol a README tells users to import must be in `__all__`.
+
+    This is the #50324 shape: a snippet that raises ImportError when copied.
+    """
+    import simsys_metrics
+
+    exported = set(simsys_metrics.__all__)
+    missing = sorted(
+        {
+            (rel, sym)
+            for rel, module, sym in _documented_imports()
+            if module == "simsys_metrics" and sym not in exported
+        }
+    )
+    assert not missing, (
+        f"these READMEs document symbols that are not in "
+        f"simsys_metrics.__all__: {missing}. A reader copying the snippet gets "
+        f"an ImportError. Either export the symbol or stop documenting it."
+    )
+
+
+def test_no_readme_documents_a_private_module_path() -> None:
+    """No README may tell a user to import from a `_`-prefixed module.
+
+    Private modules are an implementation detail this repo renames freely
+    (`_registry`, `_http`, `_process`, `_baseline`). A documented import from
+    one turns that freedom into a breaking change for every consumer who
+    copied the snippet -- and unlike an unexported symbol, it never fails, so
+    it survives indefinitely.
+
+    If a symbol is worth documenting it is worth exporting; the fix is to add
+    it to `__all__` and document the top-level path, never to allowlist a
+    private module here.
+    """
+    offenders = sorted(
+        {
+            (rel, module, sym)
+            for rel, module, sym in _documented_imports()
+            if any(part.startswith("_") for part in module.split(".")[1:])
+        }
+    )
+    assert not offenders, (
+        f"these READMEs document imports from private modules: {offenders}. "
+        f"Export the symbol from simsys_metrics and document `from "
+        f"simsys_metrics import <name>` instead."
+    )
+
+
+# --------------------------------------------------------------------------
+# Repository URL -- the org migration must not regress
+# --------------------------------------------------------------------------
+
+
+# Assembled at runtime so this file does not contain the needle it hunts.
+# Spelling it out here would make the scanner flag its own source, and the
+# obvious fix -- allowlisting this path -- would blind the guard to a
+# regression landing in the guard's own directory.
+STALE_ORG_URL = "Avicennasis" + "/simsys-metrics"
+
+
+def _tracked_files() -> list[str]:
+    """Git-tracked paths. Loud on failure rather than silently empty.
+
+    `git ls-files` rather than a filesystem walk: the walk would have to guess
+    at build output, virtualenvs and vendored trees, and a guessed exclusion
+    that is too broad turns this guard off without saying so. CI runs
+    actions/checkout, so git and a real index are both present.
+    """
+    import subprocess
+
+    proc = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, (
+        f"`git ls-files` failed ({proc.returncode}): {proc.stderr.strip()!r}. "
+        f"This guard cannot enumerate what it cannot list -- fix the "
+        f"invocation rather than letting it pass on an empty file set."
+    )
+    files = [f for f in proc.stdout.split("\0") if f]
+    assert len(files) > 50, (
+        f"`git ls-files` returned only {len(files)} paths, which is not a "
+        f"checkout of this repo. Refusing to report a clean scan."
+    )
+    return files
+
+
+def _stale_org_hits() -> dict[str, int]:
+    """`{path: occurrences}` for every tracked text file carrying the old org."""
+    hits: dict[str, int] = {}
+    for rel in _tracked_files():
+        path = ROOT / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue  # binary or unreadable: cannot carry a URL we can read
+        n = text.count(STALE_ORG_URL)
+        if n:
+            hits[rel] = n
+    return hits
+
+
+def test_stale_org_scanner_can_see_the_pattern() -> None:
+    """Positive control: the scanner must find the ALLOWED occurrences.
+
+    The assertion below is "no hits outside the changelogs". If the scanner
+    read nothing -- wrong root, empty file list, an encoding guard swallowing
+    every file -- that assertion passes trivially and reports a clean repo.
+
+    The changelogs legitimately record the pre-migration path (the transfer is
+    a historical fact), which makes them a guaranteed non-empty positive case:
+    if this test finds zero, the scanner is broken, not the repo clean.
+    """
+    hits = _stale_org_hits()
+    changelog_hits = {k: v for k, v in hits.items() if k.endswith("CHANGELOG.md")}
+    assert changelog_hits, (
+        f"the scanner found no {STALE_ORG_URL!r} anywhere, including in the "
+        f"changelogs that are supposed to record the migration. It is not "
+        f"reading the repo -- treat the companion test's pass as meaningless "
+        f"until this one is green. Scanned files with any hit: {sorted(hits)}"
+    )
+
+
+def test_no_stale_org_url_outside_changelogs() -> None:
+    """The repo moved to `Simmons-Systems/simsys-metrics`; only history may say otherwise.
+
+    Two stale URLs were fixed by hand under #50326 (`node/src/index.ts:12`
+    among them). Nothing prevented them coming back -- and a GitHub org
+    redirect keeps a stale URL WORKING, so a regression here is invisible
+    until the redirect is withdrawn.
+
+    CHANGELOG.md files are exempt by design: an entry recording that the
+    repository was transferred from the old org to Simmons-Systems would
+    be false if rewritten.
+    """
+    offenders = {
+        k: v for k, v in _stale_org_hits().items() if not k.endswith("CHANGELOG.md")
+    }
+    assert not offenders, (
+        f"stale org URL {STALE_ORG_URL!r} outside the changelogs: {offenders}. "
+        f"The canonical path is Simmons-Systems/simsys-metrics. Only "
+        f"CHANGELOG.md may record the historical one."
+    )

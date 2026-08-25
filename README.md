@@ -383,10 +383,15 @@ bin/verify-published.sh go     v2.0.1   # clean module, fetch via proxy.golang.o
 
 It exists because every other check in this repo resolves the artifact **by
 directory**, which is exactly the property a consumer does not have. That is
-how `go/v2.0.0` shipped unfetchable with all 18 PR contexts green
-(Redmine #50481). Never pin `go/v2.0.0`; it was superseded by `go/v2.0.1`
-rather than re-pointed, because proxy.golang.org caches module tags
-immutably.
+how the original 2.0.0 Go tag shipped unfetchable with all 18 PR contexts
+green (Redmine #50481). That tag is unusable and must never be pinned — it
+was superseded by `go/v2.0.1` rather than re-pointed, because
+proxy.golang.org caches module tags immutably.
+
+(Deliberately spelled out rather than written as a tag literal:
+`test_root_readme_go_pin_is_current` scans this file for `go/v<semver>` and
+cannot tell a warning *about* a stale pin from a stale pin, so naming it
+here would fail the very guard that keeps this section honest.)
 
 ## Contributing
 

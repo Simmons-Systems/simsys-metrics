@@ -10,7 +10,42 @@ Per-language detail for the Node package lives in
 
 ## [Unreleased]
 
-Nothing yet.
+### Added — post-publish verification that consumes from the public registry (#50481)
+
+`release.yml` gains a verify job per lane, each running after its publish job
+and consuming the artifact the way a consumer does:
+
+| lane | what it does |
+|---|---|
+| `python-verify` | fresh venv, `pip install simsys-metrics==<ver>` from PyPI, import, assert version |
+| `node-verify` | empty project, `npm install @simsys/metrics@<ver>`, import, assert version + `simsys_build_info` in the shipped bundle |
+| `go-verify` | clean module **outside the repo** with `GOWORK=off`, `go get <module>@<ver>` via `proxy.golang.org`, build **and** run |
+
+The shared implementation is [`bin/verify-published.sh`](bin/verify-published.sh),
+so the same check runs locally and in CI.
+
+This closes the class behind `go/v2.0.0`, which shipped unfetchable while
+`go build`, `go vet`, `go test -race`, staticcheck, the conformance suite and
+all 18 PR contexts went green — because not one of them *resolves* the
+artifact. Every in-repo check succeeds by directory resolution, which is
+exactly the property a consumer does not have.
+
+Publication is irreversible, so these jobs **report rather than prevent**: a
+failure turns the release run red. The value is turning "found weeks later by
+a consumer" into "found in a minute", which is the margin that left
+`go/v2.0.0` a dangling tag instead of a checksum mismatch in somebody's build.
+
+Proven able to fail before being trusted — against the real artifact, not a
+synthetic mutation. `bin/verify-published.sh go v2.0.0` exits 1 reproducing
+the original error verbatim:
+
+```
+invalid version: module contains a go.mod file, so module path must match
+major version ("github.com/Simmons-Systems/simsys-metrics/go/v2")
+```
+
+Also red for `python 99.99.99` and `node 99.99.99`; exit 2 for an unknown
+lane. Green for `python 2.0.0`, `node 2.0.0`, and `go v2.0.1`.
 
 ## [python-v2.0.0] — 2026-08-25
 

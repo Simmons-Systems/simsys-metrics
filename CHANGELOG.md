@@ -12,6 +12,85 @@ Per-language detail for the Node package lives in
 
 Nothing yet.
 
+## [python-v2.0.0] — 2026-08-25
+
+### Changed — BREAKING: a failing poller no longer reports `0` (#50319)
+
+A queue `depth_fn`/`depthFn` or pool stat callback that raises, rejects or
+panics now leaves its gauge **untouched**. The last successful value stands,
+and if the **first** tick fails the series is **absent** rather than `0`.
+
+Seeding `0` was the defect: an empty queue and a broken callback are
+operationally opposite, and only one of them ever gets investigated.
+
+**Operational note.** If a consumer's callback has been failing silently, its
+`simsys_queue_depth` / `simsys_pool_*` series will **disappear** on upgrade
+rather than read `0`. That is the intended signal, not a regression. Alert on
+the pair rather than the gauge alone:
+
+```promql
+rate(simsys_collector_errors_total[5m]) > 0
+```
+
+There were **six** poller paths carrying **four** policies, not the three
+#50319 recorded:
+
+| path | before 2.0.0 |
+|---|---|
+| Python `track_queue` | reported 0, warned once per tracker |
+| Python `track_pool` | preserved previous values, but a tick could be PARTIAL |
+| Node `trackQueue` | reported 0, **no warning at all** |
+| Node `trackPool` | preserved previous values |
+| Go `TrackQueue` | recovered, warned — then wrote **0 anyway** |
+| Go `TrackPool` | preserved previous values |
+
+Go's queue path had the identical defect the ticket attributed only to Python
+and Node: the `Set` call sat *outside* the recovering closure, so every
+panicking tick fell through to a confident zero.
+
+All six now read every callback **before** writing any gauge, so a partial
+tick is impossible — no more fresh `active` beside stale `idle`.
+
+### Added — `simsys_collector_errors_total` (#50319)
+
+`counter{service, collector, name}`, `collector` ∈ `{queue, pool}`.
+
+Incremented once per failed poller tick. It is what makes the new flat line
+legible: without it, "gauge stopped moving" and "gauge is genuinely steady"
+look the same. Cardinality is (queues + pools) per service.
+
+### Changed — BREAKING: `simsys_runtime_gc_collections_total` renamed on Python (#50345)
+
+Python now emits **`simsys_runtime_gc_collections_by_generation_total`**
+`{service, generation}`. The old name is retained by **Go only**, for
+`runtime.MemStats.NumGC`.
+
+This was the only metric in the catalogue whose label *names* differed by
+runtime. A panel with `by (generation)` returned empty for Go services, and
+`sum()` across lanes compared two different quantities.
+
+Split rather than unified, deliberately. Making the label sets match would not
+have made the numbers comparable — it would only have made them look it. A
+CPython total is dominated by gen0 (a live service at the time of the change
+read gen0=854, gen1=77, gen2=2) against a Go cycle count in the low single
+digits. One name now means one thing.
+
+The rename cost nothing to verify: **no dashboard panel or alert rule
+referenced the old name**, in either `dashboards/` or the ServerOps
+`simsys_metrics_scrape` pack. Per-generation detail is kept, under the new
+name.
+
+**Action required** for anything querying `simsys_runtime_gc_collections_total`
+against a Python service: switch to the `_by_generation_` name.
+
+### Changed
+
+Contract version is now `2.0.0`, and all three lanes move together.
+`spec/metrics-contract.json` carries **zero** tracked divergences for the
+first time (`expected_count` 1 → 0): #50345 is resolved, and
+`behaviors.poller_failure_policy` flips from `divergent` to `specified`.
+
+
 ## [python-v1.0.0] — 2026-08-22
 
 **All three packages align on 1.0.0 from this release. The version number is

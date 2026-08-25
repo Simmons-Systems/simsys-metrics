@@ -9,6 +9,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [node-v2.0.0] — 2026-08-25
+
+### Changed — BREAKING: a failing poller no longer reports `0` (#50319)
+
+A queue `depth_fn`/`depthFn` or pool stat callback that raises, rejects or
+panics now leaves its gauge **untouched**. The last successful value stands,
+and if the **first** tick fails the series is **absent** rather than `0`.
+
+Seeding `0` was the defect: an empty queue and a broken callback are
+operationally opposite, and only one of them ever gets investigated.
+
+**Operational note.** If a consumer's callback has been failing silently, its
+`simsys_queue_depth` / `simsys_pool_*` series will **disappear** on upgrade
+rather than read `0`. That is the intended signal, not a regression. Alert on
+the pair rather than the gauge alone:
+
+```promql
+rate(simsys_collector_errors_total[5m]) > 0
+```
+
+There were **six** poller paths carrying **four** policies, not the three
+#50319 recorded:
+
+| path | before 2.0.0 |
+|---|---|
+| Python `track_queue` | reported 0, warned once per tracker |
+| Python `track_pool` | preserved previous values, but a tick could be PARTIAL |
+| Node `trackQueue` | reported 0, **no warning at all** |
+| Node `trackPool` | preserved previous values |
+| Go `TrackQueue` | recovered, warned — then wrote **0 anyway** |
+| Go `TrackPool` | preserved previous values |
+
+Go's queue path had the identical defect the ticket attributed only to Python
+and Node: the `Set` call sat *outside* the recovering closure, so every
+panicking tick fell through to a confident zero.
+
+All six now read every callback **before** writing any gauge, so a partial
+tick is impossible — no more fresh `active` beside stale `idle`.
+
+### Added — `simsys_collector_errors_total` (#50319)
+
+`counter{service, collector, name}`, `collector` ∈ `{queue, pool}`.
+
+Incremented once per failed poller tick. It is what makes the new flat line
+legible: without it, "gauge stopped moving" and "gauge is genuinely steady"
+look the same. Cardinality is (queues + pools) per service.
+
+### Fixed
+
+`node/README.md`'s failure-behaviour note now describes reality again. It had
+claimed the gauge "stays at its last successful value or 0" — true of
+`trackPool`, false of `trackQueue` — and #85 corrected it to document the
+defect. As of 2.0.0 the original claim is true of both.
+
+### Added
+
+A `poller-failure-policy` test file. Before it this lane had **no test of
+poller failure behaviour at all**: 138 tests passed both before and after
+the behaviour change, so the suite's green carried no information about the
+one thing this release alters.
+
+
 ## [1.0.0] — 2026-08-22
 
 **All three packages align on 1.0.0 from this release. The version number is

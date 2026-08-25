@@ -16,6 +16,7 @@ import {
   poolIdle,
   poolWaiting,
   poolMax,
+  collectorErrorsTotal,
 } from "./registry.js";
 
 /**
@@ -26,6 +27,25 @@ import {
  * the live set, which `clearInterval` cannot do.
  */
 export type PollerHandle = NodeJS.Timeout & { stop(): void };
+
+/**
+ * Count one failed poller tick (#50319).
+ *
+ * Swallows its own errors on purpose: this runs on the failure path, and a
+ * metrics package that throws out of its own error accounting turns a degraded
+ * collector into an unhandled rejection inside a timer callback.
+ */
+function _bumpCollectorError(
+  service: string,
+  collector: "queue" | "pool",
+  name: string,
+): void {
+  try {
+    collectorErrorsTotal.labels({ service, collector, name }).inc();
+  } catch {
+    /* see docstring */
+  }
+}
 
 interface SimsysBaselineState {
   service: string | null;
@@ -215,13 +235,34 @@ export function trackQueue(
     );
   }
 
+  let warnedFailure = false;
+
   const tick = async () => {
-    let depth = 0;
+    let depth: number;
     try {
       const raw = await opts.depthFn();
       depth = Math.trunc(Number(raw) || 0);
-    } catch {
-      depth = 0;
+    } catch (err) {
+      // #50319: do NOT write the gauge. Until 2.0.0 this set 0, which is
+      // indistinguishable from a genuinely drained queue -- and only one of
+      // those two ever gets investigated. Returning early leaves the last
+      // known value standing, and leaves the series ABSENT entirely if the
+      // very first tick failed, which is the honest representation of "we
+      // have never successfully read this queue".
+      //
+      // This is also what the README claimed all along: it described
+      // trackPool's catch-the-whole-tick behaviour and applied it to both.
+      _bumpCollectorError(service, "queue", name);
+      if (!warnedFailure) {
+        warnedFailure = true;
+        console.warn(
+          `[simsys-metrics] depthFn for queue ${JSON.stringify(name)} failed: ` +
+            `${String(err)}. The gauge keeps its last known value (absent if ` +
+            `this was the first tick) and simsys_collector_errors_total is ` +
+            `incremented. Future failures will be silent.`,
+        );
+      }
+      return;
     }
     try {
       queueDepth.labels({ service, queue: name }).set(depth);
@@ -358,18 +399,39 @@ export function trackPool(
     poolMax.labels({ service, pool: name }).set(opts.max);
   }
 
+  let warnedFailure = false;
+
   const tick = async () => {
+    // #50319: read EVERY callback before writing ANY gauge. The previous shape
+    // interleaved reads and writes inside one try, so if idleFn rejected,
+    // poolActive had already been set for this tick -- a pool reporting a
+    // fresh `active` beside a stale `idle`, a self-inconsistent snapshot no
+    // consumer can detect. Computing first makes the tick all-or-nothing.
+    const writes: Array<[typeof poolActive, number]> = [];
     try {
-      const active = Math.max(0, Math.trunc(Number(await opts.activeFn()) || 0));
-      const idle = Math.max(0, Math.trunc(Number(await opts.idleFn()) || 0));
-      poolActive.labels({ service, pool: name }).set(active);
-      poolIdle.labels({ service, pool: name }).set(idle);
+      writes.push([poolActive, Math.max(0, Math.trunc(Number(await opts.activeFn()) || 0))]);
+      writes.push([poolIdle, Math.max(0, Math.trunc(Number(await opts.idleFn()) || 0))]);
       if (opts.waitingFn) {
-        const waiting = Math.max(0, Math.trunc(Number(await opts.waitingFn()) || 0));
-        poolWaiting.labels({ service, pool: name }).set(waiting);
+        writes.push([
+          poolWaiting,
+          Math.max(0, Math.trunc(Number(await opts.waitingFn()) || 0)),
+        ]);
       }
-    } catch {
-      /* swallow — misbehaving callbacks shouldn't crash the timer */
+    } catch (err) {
+      _bumpCollectorError(service, "pool", name);
+      if (!warnedFailure) {
+        warnedFailure = true;
+        console.warn(
+          `[simsys-metrics] pool callback for ${JSON.stringify(name)} failed: ` +
+            `${String(err)}. The gauges keep their last known values (absent ` +
+            `if this was the first tick) and simsys_collector_errors_total is ` +
+            `incremented. Future failures will be silent.`,
+        );
+      }
+      return;
+    }
+    for (const [gauge, value] of writes) {
+      gauge.labels({ service, pool: name }).set(value);
     }
   };
 

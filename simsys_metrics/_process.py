@@ -117,10 +117,21 @@ class SimsysProcessCollector:
         threads_family.add_metric([self._service], float(threading.active_count()))
         yield threads_family
 
-        # GC collections per generation
+        # GC collections per generation.
+        #
+        # #50345, resolved in 2.0.0: this was named
+        # simsys_runtime_gc_collections_total, which Go uses for a DIFFERENT
+        # quantity -- runtime.MemStats.NumGC, a count of completed cycles with
+        # no generation label. One name, two label schemas, two units. A panel
+        # with `by (generation)` returned empty for Go services and a sum()
+        # across lanes compared CPython's gen0-dominated total (hundreds)
+        # against a Go cycle count (single digits), both silently.
+        #
+        # Split rather than unified: making the label sets match would not have
+        # made the NUMBERS comparable, it would only have made them look it.
         gc_family = CounterMetricFamily(
-            "simsys_runtime_gc_collections_total",
-            "Total garbage collection runs since process start.",
+            "simsys_runtime_gc_collections_by_generation_total",
+            "CPython garbage collections since process start, per generation.",
             labels=["service", "generation"],
         )
         try:

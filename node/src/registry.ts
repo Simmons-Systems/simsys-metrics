@@ -48,6 +48,7 @@ interface SimsysRegistryState {
   poolIdle: Gauge;
   poolWaiting: Gauge;
   poolMax: Gauge;
+  collectorErrorsTotal: Counter;
   defaultMetricsRegistered: boolean;
   warnedMissingService: Set<string>;
 }
@@ -98,6 +99,12 @@ function initRegistryState(): SimsysRegistryState {
       name: guardName("simsys_queue_depth"),
       help: "Current depth of an application-owned queue.",
       labelNames: ["service", "queue"],
+      registers: [reg],
+    }),
+    collectorErrorsTotal: new Counter({
+      name: guardName("simsys_collector_errors_total"),
+      help: "Poller callback failures, by collector kind and tracked name.",
+      labelNames: ["service", "collector", "name"],
       registers: [reg],
     }),
     jobsTotal: new Counter({
@@ -307,6 +314,14 @@ export const poolActive: Gauge = _state.poolActive;
 export const poolIdle: Gauge = _state.poolIdle;
 export const poolWaiting: Gauge = _state.poolWaiting;
 export const poolMax: Gauge = _state.poolMax;
+
+// -------- Poller failure accounting (#50319) --------
+//
+// From 2.0.0 a failing trackQueue/trackPool tick does NOT write its gauge, so
+// a broken callback shows up as a FLAT LINE rather than a zero. This counter
+// is what makes that flatline legible as instrumentation failure rather than
+// a genuinely idle queue.
+export const collectorErrorsTotal: Counter = _state.collectorErrorsTotal;
 
 // -------- Default runtime metrics (opt-in wrapper) --------
 

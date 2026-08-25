@@ -49,7 +49,7 @@ npm install @simsys/metrics
 ```json
 {
   "dependencies": {
-    "@simsys/metrics": "^1.0.0"
+    "@simsys/metrics": "^2.0.0"
   }
 }
 ```
@@ -62,7 +62,7 @@ Before 1.0.0 the package was distributed only as a tarball attached to each
 ```json
 {
   "dependencies": {
-    "@simsys/metrics": "https://github.com/Simmons-Systems/simsys-metrics/releases/download/node-v1.0.0/simsys-metrics-1.0.0.tgz"
+    "@simsys/metrics": "https://github.com/Simmons-Systems/simsys-metrics/releases/download/node-v2.0.0/simsys-metrics-2.0.0.tgz"
   }
 }
 ```
@@ -223,21 +223,27 @@ trackQueue("inference", {
 
 The `depthFn` can return a number or a `Promise<number>`.
 
-> **Current failure behaviour — a throwing `depthFn` reports depth `0`.**
-> Not the last successful value: `depth` is reset to `0` each tick and set
-> unconditionally, and nothing is logged. So a queue whose depth callback is
-> broken is indistinguishable on the dashboard from a queue that is empty,
-> which is the reading an operator is least likely to investigate.
+> **Failure behaviour (2.0.0+).** A throwing or rejecting `depthFn` does
+> **not** write the gauge. The last successful value stands, and if the very
+> *first* tick fails the series is **absent** rather than `0`.
 >
-> `trackPool` differs — its catch wraps the whole tick, so pool gauges do
-> keep their previous values on failure.
+> Every failed tick increments
+> `simsys_collector_errors_total{collector="queue",name="inference"}`, and the
+> first failure per tracker logs a warning. `trackPool` behaves identically,
+> and its tick is all-or-nothing: every callback is read before any gauge is
+> written, so you never see a fresh `active` beside a stale `idle`.
 >
-> This is a known defect ([Redmine #50319](https://github.com/Simmons-Systems/simsys-metrics)),
-> not the intended contract. The fix — preserve the last known value, leave
-> the series absent when the very first tick fails, and count failures on
-> `simsys_collector_errors_total` — changes an emitted value, so it ships in
-> its own release rather than alongside additive changes. Until then, treat
-> a flat `0` on `simsys_queue_depth` as *possibly* a broken callback.
+> **This changed in 2.0.0** ([Redmine #50319](https://github.com/Simmons-Systems/simsys-metrics)).
+> Before it, a throwing `depthFn` reported `0` with no log line at all, which
+> is indistinguishable from a genuinely drained queue — the reading an
+> operator is least likely to investigate. If a consumer's callback has been
+> failing silently, upgrading makes that series **disappear**; that is the
+> intended signal, and `simsys_collector_errors_total` is where to look.
+>
+> Alert on the pair, not the gauge alone:
+> `rate(simsys_collector_errors_total[5m]) > 0` means the neighbouring
+> `simsys_queue_depth` / `simsys_pool_*` series is stale and must not be
+> trusted.
 
 ### Job timing
 

@@ -72,6 +72,17 @@ def emitted() -> dict[str, tuple[str, set[str]]]:
     simsys_metrics.track_pool(
         "cp", active_fn=lambda: 1, idle_fn=lambda: 1, interval=3600
     )
+
+    # simsys_collector_errors_total only ever gets a series when a poller
+    # callback FAILS (#50319), so the fixture has to break one on purpose.
+    # Without this the counter has no samples, `test_declared_labels_match`
+    # SKIPS, and its label set ships unverified -- a skip is not a pass.
+    def _boom() -> int:
+        raise RuntimeError("contract fixture: deliberate depth_fn failure")
+
+    _broken = simsys_metrics.track_queue("cq-broken", depth_fn=_boom, interval=3600)
+    _broken.stop()
+
     with simsys_metrics.track_job("cj"):
         pass
     simsys_metrics.track_progress(

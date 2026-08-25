@@ -635,3 +635,59 @@ def test_no_stale_org_url_outside_changelogs() -> None:
         f"The canonical path is Simmons-Systems/simsys-metrics. Only "
         f"CHANGELOG.md may record the historical one."
     )
+
+
+# --------------------------------------------------------------------------
+# Registry install snippets -- the pins that became the primary UX at 1.0.0
+# --------------------------------------------------------------------------
+#
+# The checks above guard the TAG-based install forms (`python-v<ver>`,
+# `node-v<ver>`, the `.tgz` filename) because those were the only way to
+# install this package when they were written. 1.0.0 published to PyPI and
+# npm, which made `pip install simsys-metrics==<ver>` and a `^<ver>` range in
+# package.json the forms a consumer actually copies -- and NOTHING checked
+# them.
+#
+# Found the honest way, at 2.0.0: a blanket rewrite of every `python-v1.0.0`
+# and `node-v1.0.0` pin left `simsys-metrics[fastapi]==1.0.0` in README.md and
+# `"@simsys/metrics": "^1.0.0"` in node/README.md untouched, and the whole
+# 14-test guard above stayed green. That is FR-070 and FR-101 for the third
+# and fourth time, in the one shape the existing guard could not see.
+
+
+def test_python_pypi_pin_snippet_is_current() -> None:
+    """`pip install simsys-metrics[...]==<ver>` in the root README."""
+    expected = python_pyproject_version()
+    pin = _one(
+        rf"^simsys-metrics\[[a-z]+\]==({SEMVER})$",
+        _read("README.md"),
+        "README.md",
+        "PyPI version pin in the requirements.txt example",
+    )
+    assert pin == expected, (
+        f"README.md pins simsys-metrics=={pin} but the package is {expected}. "
+        f"Since 1.0.0 this is the PRIMARY install form -- a consumer copying "
+        f"it installs something other than what the changelog describes."
+    )
+
+
+def test_node_npm_range_snippet_is_current() -> None:
+    """`"@simsys/metrics": "^<ver>"` in the Node README's package.json example.
+
+    A caret range is checked against the exact current version deliberately.
+    `^1.0.0` still *resolves* under 2.0.0 -- to the newest 1.x, which is not
+    what the surrounding prose describes. A range that silently resolves to a
+    different major is worse than a broken pin, because nothing errors.
+    """
+    expected = node_package_version()
+    pin = _one(
+        rf'^\s*"@simsys/metrics": "\^({SEMVER})"$',
+        _read("node/README.md"),
+        "node/README.md",
+        "npm semver range in the package.json example",
+    )
+    assert pin == expected, (
+        f'node/README.md shows "@simsys/metrics": "^{pin}" but the package '
+        f"is {expected}. Under a new major, ^{pin} resolves to the old major "
+        f"without erroring."
+    )

@@ -30,7 +30,24 @@ def test_track_queue_requires_install_first():
         track_queue("x", depth_fn=lambda: 1)
 
 
-def test_track_queue_swallows_depth_fn_exception():
+def test_track_queue_leaves_the_series_absent_when_the_first_tick_fails():
+    """#50319, and the assertion here is DELIBERATELY INVERTED from 2.0.0.
+
+    Until 2.0.0 this test read::
+
+        # Gauge should default to 0 (int coercion of caught exception path).
+        assert v == 0
+
+    That comment described the defect approvingly. Reporting 0 makes a broken
+    ``depth_fn`` indistinguishable from a genuinely drained queue, and only one
+    of those two ever gets investigated -- a queue at 0 is the state everyone
+    is hoping for.
+
+    Flipping this is the contract change, not an incidental edit. A consumer
+    whose depth_fn has been silently failing will see its series DISAPPEAR on
+    upgrade rather than read 0, which is the entire point: absent means "never
+    successfully measured", and 0 means "measured, and empty".
+    """
     set_service("queue_test_svc")
 
     counter = [0]
@@ -41,13 +58,75 @@ def test_track_queue_swallows_depth_fn_exception():
 
     track_queue("broken", depth_fn=bad, interval=0.05)
     time.sleep(0.25)
-    # Gauge should default to 0 (int coercion of caught exception path).
+
     v = REGISTRY.get_sample_value(
         "simsys_queue_depth", {"service": "queue_test_svc", "queue": "broken"}
     )
-    assert v == 0
+    assert v is None, (
+        f"the first tick failed, so simsys_queue_depth must have NO sample for "
+        f"this queue -- got {v!r}. Seeding a value here is the #50319 lie."
+    )
+
+    # The failure is counted, so the absent series is legible rather than
+    # merely missing.
+    errors = REGISTRY.get_sample_value(
+        "simsys_collector_errors_total",
+        {"service": "queue_test_svc", "collector": "queue", "name": "broken"},
+    )
+    assert errors is not None and errors >= 2, (
+        f"expected simsys_collector_errors_total to count every failed tick, "
+        f"got {errors!r}"
+    )
+
     # And the poller kept running (didn't crash after the first raise).
     assert counter[0] >= 2
+
+
+def test_track_queue_preserves_the_last_known_value_when_a_later_tick_fails():
+    """The other half of #50319: a gauge that HAS a value keeps it.
+
+    First-tick failure leaves the series absent; a failure after a successful
+    read must leave the last good value standing rather than resetting to 0.
+    Without this the fix would only be half-implemented, and the half that is
+    missing is the one a long-running service actually hits.
+    """
+    set_service("queue_test_svc")
+
+    state = {"ok": True, "calls": 0}
+
+    def flaky():
+        state["calls"] += 1
+        if state["ok"]:
+            return 42
+        raise RuntimeError("boom")
+
+    track_queue("flaky", depth_fn=flaky, interval=0.05)
+
+    labels = {"service": "queue_test_svc", "queue": "flaky"}
+    deadline = time.time() + 2.0
+    while time.time() < deadline:
+        if REGISTRY.get_sample_value("simsys_queue_depth", labels) == 42:
+            break
+        time.sleep(0.02)
+    assert REGISTRY.get_sample_value("simsys_queue_depth", labels) == 42, (
+        "precondition: the gauge must be populated before we break the callback"
+    )
+
+    state["ok"] = False
+    settled = state["calls"]
+    while time.time() < deadline and state["calls"] < settled + 3:
+        time.sleep(0.02)
+
+    assert REGISTRY.get_sample_value("simsys_queue_depth", labels) == 42, (
+        "a failing tick must leave the last known value in place, not reset to 0"
+    )
+    errors = REGISTRY.get_sample_value(
+        "simsys_collector_errors_total",
+        {"service": "queue_test_svc", "collector": "queue", "name": "flaky"},
+    )
+    assert errors is not None and errors >= 1, (
+        f"the stale gauge must be annotated by an error count, got {errors!r}"
+    )
 
 
 def test_track_queue_rejects_zero_interval():

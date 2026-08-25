@@ -66,6 +66,12 @@ type Metrics struct {
 	scrapeErrors   *prometheus.CounterVec
 	scrapeDuration *prometheus.GaugeVec
 
+	// collectorErrors counts failed poller ticks (#50319). From 2.0.0 a
+	// panicking depthFn/pool callback leaves its gauge untouched, so a broken
+	// collector reads as a FLAT LINE rather than a zero. This counter is what
+	// makes that flatline legible as instrumentation failure.
+	collectorErrors *prometheus.CounterVec
+
 	startedAt time.Time
 }
 
@@ -149,6 +155,11 @@ func Install(opts InstallOpts) (*Metrics, error) {
 		"simsys_queue_depth",
 		"Current depth of an application-owned queue.",
 		[]string{"service", "queue"},
+	)
+	m.collectorErrors = m.MakeCounter(
+		"simsys_collector_errors_total",
+		"Poller callback failures, by collector kind and tracked name.",
+		[]string{"service", "collector", "name"},
 	)
 	m.jobsTotal = m.MakeCounter(
 		"simsys_jobs_total",

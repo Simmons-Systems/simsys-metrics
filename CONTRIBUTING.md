@@ -37,15 +37,46 @@ they pass locally before opening a PR.
 
 ## Adding a metric
 
-1. Define it via `make_counter / make_gauge / make_histogram` in
-   `simsys_metrics/_registry.py` (or a sibling file for opt-in metrics).
-   The prefix guard will reject anything not starting with `simsys_`.
-2. Document labels + cardinality bounds in the metric's docstring and in
-   the `Metric catalogue` table in [README.md](README.md).
-3. Add a unit test that exercises the metric end-to-end.
-4. Update `bin/check-metrics-conformance.sh` if the metric belongs in the
-   baseline (visible with zero extra code).
-5. Add a `CHANGELOG.md` entry under `[Unreleased]`.
+**Start with the contract, not the code.** `spec/metrics-contract.json` is the
+single source of truth; all three lanes read it, and the conformance tests take
+their expectations from it. Editing a lane first just makes CI red.
+
+1. **Declare it in `spec/metrics-contract.json`** — name (must carry the
+   `simsys_` prefix), type, label list (must include `service`), any enum or
+   bucket-schedule references, `tier` (`core` = guaranteed in every runtime;
+   `extension` = runtime-specific), and the explicit `runtimes` array.
+   Coverage is genuinely three-valued — some metrics live in two of three
+   lanes — so `runtimes` is a list, never a boolean.
+2. **Implement it in EVERY lane listed in `runtimes`:**
+   - Python — `make_counter` / `make_gauge` / `make_histogram` (exported from
+     the package root; the prefix guard rejects anything outside `simsys_`)
+   - Node — `node/src/registry.ts`
+   - Go — the `MakeCounter` / `MakeGauge` / `MakeHistogram` helpers in
+     `go/metrics.go`
+   A metric declared `tier: core` that is missing from a lane fails CI, because
+   `core` is the promise a `$service`-templated dashboard relies on.
+3. **Regenerate the README catalogue.** The table in `README.md` is fenced in
+   `BEGIN/END GENERATED CATALOGUE` markers and is asserted against the contract
+   by `tests/test_catalogue_matches_contract.py`. Do not hand-edit rows.
+4. **Add a unit test that exercises the metric end-to-end** in each implementing
+   lane. The per-lane conformance tests assert against a *live registry*, never
+   against the source that defines the metric — a test that reads the
+   definition back agrees with the implementation by construction and can never
+   catch a metric that fails to register.
+5. **Add a `CHANGELOG.md` entry under `[Unreleased]`** in the root file, plus
+   the per-lane changelog for any lane whose behaviour changed.
+
+> **Why the contract exists.** `simsys_pool_*` was implemented in all three
+> lanes and documented in none — the old version of this section said to update
+> the README catalogue, so the process existed and was simply skipped. Four
+> metric families went missing that way. Steps 1 and 3 are now enforced by CI
+> rather than by remembering.
+
+> **Changing an existing metric's value or labels is a BREAKING change.** It
+> ships alone as a major, never alongside additive work. If two lanes
+> legitimately differ for now, declare it in the contract as
+> `status: divergent` with a ticket — the divergence count is budgeted, so
+> adding one is a deliberate edit a reviewer sees.
 
 ## Adding a framework
 

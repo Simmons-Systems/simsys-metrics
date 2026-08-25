@@ -114,6 +114,16 @@ func emitted(t *testing.T) map[string]*dto.MetricFamily {
 		Max:       10,
 	})
 	defer stopP()
+
+	// simsys_collector_errors_total only ever gets a series when a poller
+	// callback FAILS (#50319), so the fixture has to break one on purpose.
+	// Without this the family is absent and the conformance check reports a
+	// contract error where the real problem is an undriven fixture.
+	stopBad := m.TrackQueue(ctx, "cq-broken", time.Hour, func() int {
+		panic("contract fixture: deliberate depthFn panic")
+	})
+	defer stopBad()
+
 	m.TrackJob("cj")()
 
 	// prometheus's Gather() omits a MetricFamily with ZERO series, so a

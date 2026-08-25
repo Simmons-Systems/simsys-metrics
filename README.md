@@ -26,9 +26,9 @@ Grafana dashboard works across every runtime:
 
 | Package | Path | Languages | Tag prefix | Install |
 |---------|------|-----------|------------|---------|
-| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v1.0.0`) | `pip install simsys-metrics` (PyPI) |
-| [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v1.0.0`) | `npm install @simsys/metrics` (npm) |
-| [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v1.0.0`) | `go get ...@v1.0.0` |
+| `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v2.0.0`) | `pip install simsys-metrics` (PyPI) |
+| [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v2.0.0`) | `npm install @simsys/metrics` (npm) |
+| [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v2.0.0`) | `go get ...@v2.0.0` |
 
 The Python package remains at the repo root for pip git-install compatibility. The Node and Go packages live under [`node/`](node/) and [`go/`](go/) respectively — see each subdirectory's README for install details.
 
@@ -78,7 +78,7 @@ Pin to the tag. Bumping a consumer means re-pointing this URL at a newer tag.
 <summary>Pinning in <code>requirements.txt</code></summary>
 
 ```
-simsys-metrics[fastapi]==1.0.0
+simsys-metrics[fastapi]==2.0.0
 ```
 
 Works in plain Docker builds — no SSH agent, no auth tokens required.
@@ -191,11 +191,13 @@ unmodified across every app.
 | `simsys_queue_depth` | Gauge | `service, queue` | Py Node Go | core | opt-in |
 | `simsys_process_threads` | Gauge | `service` | Py Go | **ext** | baseline |
 | `simsys_process_uptime_seconds` | Gauge | `service` | Node | **ext** | baseline |
-| `simsys_runtime_gc_collections_total` | Counter | `service` (Go) / `service, generation` (Py) | Py Go | **ext** | baseline — divergent, see #50345 |
+| `simsys_runtime_gc_collections_by_generation_total` | Counter | `service, generation` | Py | **ext** | baseline |
+| `simsys_runtime_gc_collections_total` | Counter | `service` | Go | **ext** | baseline |
 | `simsys_runtime_gc_pause_total_seconds` | Counter | `service` | Go | **ext** | baseline |
 | `simsys_runtime_goroutines` | Gauge | `service` | Go | **ext** | baseline |
 | `simsys_scrape_duration_seconds` | Gauge | `service` | Py Go | **ext** | baseline |
 | `simsys_scrape_errors_total` | Counter | `service` | Py Go | **ext** | baseline |
+| `simsys_collector_errors_total` | Counter | `service, collector, name` | Py Node Go | **ext** | opt-in |
 
 Tier **core** is guaranteed in every runtime with the declared type and label
 names -- a `$service`-templated dashboard may rely on it unconditionally.

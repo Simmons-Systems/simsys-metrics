@@ -7,6 +7,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // -------- TrackJob --------
@@ -75,18 +77,32 @@ func (m *Metrics) TrackQueue(ctx context.Context, name string, interval time.Dur
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		tick := func() {
-			depth := 0
+			// #50319: `ok` gates the write. Before 2.0.0 the Set below sat
+			// outside this closure with `depth` initialised to 0, so a
+			// panicking depthFn recovered, warned -- and then wrote 0 anyway,
+			// indistinguishable from a genuinely drained queue. Go's queue
+			// path had the identical defect the ticket recorded for Python
+			// and Node.
+			depth, ok := 0, false
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
+						m.collectorErrors.WithLabelValues(m.service, "queue", name).Inc()
 						if loggedPanic.CompareAndSwap(false, true) {
-							slog.Warn("simsys-metrics: TrackQueue depthFn panicked",
+							slog.Warn("simsys-metrics: TrackQueue depthFn panicked; "+
+								"the gauge keeps its last known value (absent if this "+
+								"was the first tick) and simsys_collector_errors_total "+
+								"is incremented",
 								"queue", name, "service", m.service, "panic", r)
 						}
 					}
 				}()
 				depth = depthFn()
+				ok = true
 			}()
+			if !ok {
+				return
+			}
 			if depth < 0 {
 				depth = 0
 			}
@@ -140,21 +156,43 @@ func (m *Metrics) TrackPool(ctx context.Context, name string, interval time.Dura
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		tick := func() {
+			// #50319: read EVERY callback before writing ANY gauge. The
+			// previous shape interleaved reads and writes inside one recover,
+			// so a panicking IdleFn left poolActive already updated for this
+			// tick -- a fresh `active` beside a stale `idle`, a
+			// self-inconsistent snapshot no consumer can detect.
+			type write struct {
+				vec   *prometheus.GaugeVec
+				value float64
+			}
+			var writes []write
+			ok := false
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
+						m.collectorErrors.WithLabelValues(m.service, "pool", name).Inc()
 						if loggedPanic.CompareAndSwap(false, true) {
-							slog.Warn("simsys-metrics: TrackPool callback panicked",
+							slog.Warn("simsys-metrics: TrackPool callback panicked; "+
+								"the gauges keep their last known values (absent if "+
+								"this was the first tick) and "+
+								"simsys_collector_errors_total is incremented",
 								"pool", name, "service", m.service, "panic", r)
 						}
 					}
 				}()
-				m.poolActive.WithLabelValues(m.service, name).Set(float64(max(0, opts.ActiveFn())))
-				m.poolIdle.WithLabelValues(m.service, name).Set(float64(max(0, opts.IdleFn())))
+				writes = append(writes, write{m.poolActive, float64(max(0, opts.ActiveFn()))})
+				writes = append(writes, write{m.poolIdle, float64(max(0, opts.IdleFn()))})
 				if opts.WaitingFn != nil {
-					m.poolWaiting.WithLabelValues(m.service, name).Set(float64(max(0, opts.WaitingFn())))
+					writes = append(writes, write{m.poolWaiting, float64(max(0, opts.WaitingFn()))})
 				}
+				ok = true
 			}()
+			if !ok {
+				return
+			}
+			for _, w := range writes {
+				w.vec.WithLabelValues(m.service, name).Set(w.value)
+			}
 		}
 		tick()
 		for {

@@ -91,6 +91,19 @@ describe("metric contract conformance (node)", () => {
     // series passes without testing anything.
     trackQueue("cq", { depthFn: () => 1, intervalMs: 3_600_000 }).stop();
     trackPool("cp", { activeFn: () => 1, idleFn: () => 1, intervalMs: 3_600_000 }).stop();
+
+    // simsys_collector_errors_total only ever gets a series when a poller
+    // callback FAILS (#50319), so the fixture has to break one on purpose.
+    // Without this the counter has no samples and its declared label set ships
+    // unverified in this lane.
+    const broken = trackQueue("cq-broken", {
+      depthFn: () => {
+        throw new Error("contract fixture: deliberate depthFn failure");
+      },
+      intervalMs: 3_600_000,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    broken.stop();
     await trackJob("cj").run(async () => undefined);
     trackProgress({ operation: "cop", total: 1, windowMs: 60_000, intervalMs: 3_600_000 }).stop();
 

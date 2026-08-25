@@ -22,7 +22,7 @@
     "conformance tests read the expected values from here, so an",
     "implementation-only change goes red. That is the point."
   ],
-  "contract_version": "1.0.0",
+  "contract_version": "2.0.0",
   "prefix": "simsys_",
   "required_label": "service",
 
@@ -52,6 +52,14 @@
     "memory_type_core": {
       "values": ["rss"],
       "notes": "The ONLY memory type every runtime emits. A cross-runtime dashboard panel must filter type=\"rss\" or it double-counts on Node, where heapUsed is a subset of heapTotal is a subset of rss."
+    },
+    "collector_kind": {
+      "values": ["queue", "pool"],
+      "notes": "Which opt-in poller failed. Closed set: cardinality of simsys_collector_errors_total is (queues + pools) per service, and stays bounded only because this list is closed. A new poller family means adding a value here on purpose."
+    },
+    "gc_generation": {
+      "values": ["0", "1", "2"],
+      "notes": "CPython's three GC generations. Python-only by construction -- Go has no generational GC, which is why simsys_runtime_gc_collections_by_generation_total is a separate metric from simsys_runtime_gc_collections_total rather than the same name with a per-runtime label set (#50345)."
     }
   },
 
@@ -185,15 +193,21 @@
       "labels": ["service"]
     },
     "simsys_runtime_gc_collections_total": {
-      "type": "counter", "tier": "extension", "runtimes": ["python", "go"],
-      "status": "divergent",
-      "ticket": "50345",
-      "current": {
-        "python": { "labels": ["service", "generation"] },
-        "go": { "labels": ["service"] }
-      },
-      "target": { "labels": ["service"] },
-      "notes": "The ONLY metric in the catalogue whose label NAMES differ by runtime, which is what makes it look unintended rather than designed. Python reports CPython's three GC generations separately; Go reports a single runtime.MemStats.NumGC cycle count. A panel with `by (generation)` returns empty for Go services, and summing across lanes compares different units. Declared as it actually behaves -- NOT as it should -- so the conformance tests assert something true and stay green. Declaring the target here instead would ship a permanently-red check, and a check that is always red stops carrying information. Resolving #50345 means editing `current` to match `target` and flipping `status` to `specified`, in the same commit as the code change."
+      "type": "counter", "tier": "extension", "runtimes": ["go"],
+      "labels": ["service"],
+      "notes": "Go only, as of 2.0.0. Counts COMPLETED GC CYCLES (runtime.MemStats.NumGC). Until 2.0.0 this name also carried Python's per-generation counts under a `generation` label -- the only metric in the catalogue whose label NAMES differed by runtime (#50345). Python moved to simsys_runtime_gc_collections_by_generation_total. Splitting rather than unifying was deliberate: the two numbers are not the same unit and never were, so making the label sets match would have left sum() across lanes silently meaningless while making it LOOK legitimate. A CPython total is dominated by gen0 (kronos-api at the time of the change: gen0=854, gen1=77, gen2=2, total 933) against a Go cycle count in the low single digits."
+    },
+    "simsys_runtime_gc_collections_by_generation_total": {
+      "type": "counter", "tier": "extension", "runtimes": ["python"],
+      "labels": ["service", "generation"],
+      "label_enums": { "generation": "gc_generation" },
+      "notes": "Python only. CPython collections per GC generation, from gc.get_stats(). New name in 2.0.0; before that these series were emitted as simsys_runtime_gc_collections_total, which Go used for a different quantity (#50345). Renamed rather than reshaped so one metric name means one thing: no dashboard panel or alert rule in the fleet referenced the old name when the change was made (checked in both dashboards/ and the ServerOps simsys_metrics_scrape pack), so the rename cost nothing and the per-generation detail was kept."
+    },
+    "simsys_collector_errors_total": {
+      "type": "counter", "tier": "extension", "runtimes": ["python", "node", "go"],
+      "labels": ["service", "collector", "name"],
+      "label_enums": { "collector": "collector_kind" },
+      "notes": "New in 2.0.0 (#50319). Incremented once per FAILED poller tick, where a queue depth_fn / pool stat callback raises, rejects or panics. Its whole purpose is to make a stalled gauge legible: from 2.0.0 a failing poller leaves its gauge at the last known value (and ABSENT if the very first tick failed) rather than writing 0, so this counter is the only signal that the flatline is instrumentation failure and not a drained queue. `name` is the queue or pool name, so cardinality is (queues + pools) per service. Pair it with the gauge in alerts: rate(simsys_collector_errors_total[5m]) > 0 means the neighbouring simsys_queue_depth / simsys_pool_* series is stale and must not be trusted."
     }
   },
 
@@ -205,9 +219,8 @@
       "reviewer sees -- not a line appearing in a list nobody reads. That is",
       "what stops 'declare it divergent' becoming cheaper than fixing it."
     ],
-    "expected_count": 1,
+    "expected_count": 0,
     "entries": [
-      { "metric": "simsys_runtime_gc_collections_total", "ticket": "50345", "kind": "label-schema" }
     ]
   },
 
@@ -225,14 +238,9 @@
       "target": "rejected in all three"
     },
     "poller_failure_policy": {
-      "status": "divergent", "ticket": "50319",
-      "current": {
-        "python": "reports 0, warns once per tracker",
-        "node": "trackQueue reports 0 silently; trackPool keeps previous values",
-        "go": "recovers and warns"
-      },
-      "target": "preserve last known value, leave series absent on first-tick failure, count on simsys_collector_errors_total",
-      "notes": "Three policies in one package, one of which contradicted its own README. Changing an emitted value, so it ships in its own release."
+      "status": "specified", "ticket": "50319",
+      "specification": "A failing poller tick MUST NOT write its gauge. The last known value stands; if the FIRST tick fails the series is absent, never 0. Every failed tick increments simsys_collector_errors_total{collector,name} and the first failure per tracker logs a warning.",
+      "notes": "Resolved in 2.0.0. Before it there were SIX poller paths carrying FOUR policies, not the three the ticket recorded: python track_queue reported 0 and warned once; python track_pool preserved previous values (with a partial-tick hole -- gauges set before the raising callback kept the new value); node trackQueue reported 0 with no warning at all; node trackPool preserved; go TrackQueue recovered the panic, warned once, and then wrote 0 ANYWAY because the Set call sat outside the recovering closure; go TrackPool preserved. Go's queue path had the identical defect the ticket attributed only to python and node. Seeding 0 is what created the lie: an empty queue and a broken depth_fn are operationally opposite and only one gets investigated. All six paths now compute every value BEFORE writing any gauge, so a partial tick cannot happen either."
     },
     "service_identity": {
       "status": "divergent", "ticket": "50321",

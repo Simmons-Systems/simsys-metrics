@@ -57,6 +57,20 @@ job_duration_seconds = make_histogram(
     buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300),
 )
 
+# #50319. From 2.0.0 a failing poller tick does NOT write its gauge, which
+# means a broken depth_fn now looks like a FLAT LINE rather than a zero. That
+# is the right shape -- an empty queue and a broken callback are operationally
+# opposite -- but a flat line is only legible if something else says "this is
+# stale". This counter is that something else.
+#
+# Cardinality is (queues + pools) per service, bounded because `collector` is
+# a closed two-value enum in the contract.
+collector_errors_total = make_counter(
+    "simsys_collector_errors_total",
+    "Poller callback failures, by collector kind and tracked name.",
+    labelnames=("service", "collector", "name"),
+)
+
 _SERVICE: Optional[str] = None
 _SERVICE_LOCK = threading.Lock()
 
@@ -193,6 +207,22 @@ class PollerThread(threading.Thread):
                 return
 
 
+def _bump_collector_error(service: str, collector: str, name: str) -> None:
+    """Count one failed poller tick (#50319).
+
+    Deliberately swallows its own errors: this runs on the failure path, and a
+    metrics package that raises out of its own error accounting turns a
+    degraded collector into a crashed poller thread. The gauge's silence is
+    already the primary signal; this counter is the annotation on it.
+    """
+    try:
+        collector_errors_total.labels(
+            service=service, collector=collector, name=name
+        ).inc()
+    except Exception:  # pragma: no cover - defensive, see docstring
+        pass
+
+
 def _warn_empty_name(kind: str, name: object) -> None:
     """Warn-only guard for an empty queue/pool name (#50322).
 
@@ -248,15 +278,24 @@ def track_queue(
         try:
             depth = int(depth_fn())
         except Exception as exc:
+            # #50319: do NOT write the gauge. Until 2.0.0 this reported 0,
+            # which is indistinguishable from a genuinely drained queue -- and
+            # only one of those two gets investigated. Returning early leaves
+            # the last known value standing, and leaves the series ABSENT
+            # entirely if the very first tick failed, which is the honest
+            # representation of "we have never successfully read this queue".
+            _bump_collector_error(service, "queue", queue)
             if not seen_failure:
                 _log.warning(
-                    "simsys-metrics: depth_fn for queue %r raised %r; "
-                    "future failures will be silent. Reporting depth=0.",
+                    "simsys-metrics: depth_fn for queue %r raised %r; the gauge "
+                    "keeps its last known value (absent if this was the first "
+                    "tick) and simsys_collector_errors_total is incremented. "
+                    "Future failures will be silent.",
                     queue,
                     exc,
                 )
                 seen_failure = True
-            depth = 0
+            return
         try:
             queue_depth.labels(service=service, queue=queue).set(depth)
         except Exception as exc:
@@ -420,20 +459,34 @@ def track_pool(
 
     def _poll() -> None:
         nonlocal seen_failure
+        # #50319: read EVERY callback before writing ANY gauge. The previous
+        # shape interleaved reads and writes inside one try, so if idle_fn
+        # raised, pool_active had already been set for this tick -- a pool
+        # reporting a fresh `active` beside a stale `idle`, which is a
+        # self-inconsistent snapshot that no consumer can detect. Computing
+        # first makes the tick all-or-nothing.
         try:
-            pool_active.labels(service=service, pool=name).set(float(active_fn()))
-            pool_idle.labels(service=service, pool=name).set(float(idle_fn()))
+            values = [
+                (pool_active, float(active_fn())),
+                (pool_idle, float(idle_fn())),
+            ]
             if waiting_fn is not None:
-                pool_waiting.labels(service=service, pool=name).set(float(waiting_fn()))
+                values.append((pool_waiting, float(waiting_fn())))
         except Exception as exc:
+            _bump_collector_error(service, "pool", name)
             if not seen_failure:
                 _log.warning(
-                    "simsys-metrics: pool callback for %r raised %r; "
-                    "future failures will be silent.",
+                    "simsys-metrics: pool callback for %r raised %r; the gauges "
+                    "keep their last known values (absent if this was the first "
+                    "tick) and simsys_collector_errors_total is incremented. "
+                    "Future failures will be silent.",
                     name,
                     exc,
                 )
                 seen_failure = True
+            return
+        for gauge, value in values:
+            gauge.labels(service=service, pool=name).set(value)
 
     t = PollerThread(
         name=f"simsys-metrics-pool-{name}",

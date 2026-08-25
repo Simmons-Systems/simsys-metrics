@@ -360,10 +360,38 @@ bin/check-metrics-conformance.sh # end-to-end smoke test against the demo app
 ### Release flow
 
 1. Bump `version` in `pyproject.toml` and `simsys_metrics/__init__.py`.
+   All three lanes carry the same contract version — bumping one means
+   bumping all three.
 2. Add a `CHANGELOG.md` entry.
 3. Run `pytest` and `bin/check-metrics-conformance.sh` — both must be green.
 4. `git tag python-vX.Y.Z && git push --tags`.
-5. Consumers re-pin their install URL to the new tag.
+5. `release.yml` builds, attests, releases and publishes — then a
+   **post-publish verify job per lane consumes the artifact from its public
+   registry** (`bin/verify-published.sh`). Publication is irreversible, so
+   that job reports rather than prevents: a failure turns the release run
+   red. Check it, and do not assume a green publish step means the artifact
+   is fetchable.
+
+To run the same check by hand — before cutting a release, or to confirm one
+that already shipped:
+
+```bash
+bin/verify-published.sh python 2.0.0    # fresh venv, install from PyPI
+bin/verify-published.sh node   2.0.0    # empty project, install from npm
+bin/verify-published.sh go     v2.0.1   # clean module, fetch via proxy.golang.org
+```
+
+It exists because every other check in this repo resolves the artifact **by
+directory**, which is exactly the property a consumer does not have. That is
+how the original 2.0.0 Go tag shipped unfetchable with all 18 PR contexts
+green (Redmine #50481). That tag is unusable and must never be pinned — it
+was superseded by `go/v2.0.1` rather than re-pointed, because
+proxy.golang.org caches module tags immutably.
+
+(Deliberately spelled out rather than written as a tag literal:
+`test_root_readme_go_pin_is_current` scans this file for `go/v<semver>` and
+cannot tell a warning *about* a stale pin from a stale pin, so naming it
+here would fail the very guard that keeps this section honest.)
 
 ## Contributing
 

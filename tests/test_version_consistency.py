@@ -350,15 +350,45 @@ def test_all_three_lanes_are_on_the_same_version() -> None:
 
     If a change genuinely affects only one runtime, it still gets a version in
     all three -- the number identifies the CONTRACT, not the size of the diff.
+
+    THE ONE CARVE-OUT: MAJOR.MINOR must match everywhere; the Go lane may carry
+    a higher PATCH. Go is the only lane whose packaging can fail in a way that
+    is unfixable in place: a tag is immutable on proxy.golang.org, so a botched
+    release is repaired only by publishing a new patch version. That happened
+    at go/v2.0.0, whose go.mod was missing the `/v2` module-path suffix Go
+    requires for major >= 2 -- the tag could not be fetched at all, and
+    go/v2.0.1 superseded it.
+
+    Forcing the lanes back into lockstep there would mean republishing PyPI and
+    npm to fix a Go packaging error, burning two version numbers that can never
+    be reused, on two artifacts that were correct. The patch component does not
+    identify the catalogue; MAJOR.MINOR does. So that is what is pinned.
+
+    A Go MINOR or MAJOR ahead of the others is still drift and still fails.
     """
     py = python_pyproject_version()
     node = node_package_version()
     go = go_changelog_version()
-    assert py == node == go, (
+
+    assert py == node, (
+        f"python={py} and node={node} have drifted. These two have no "
+        f"packaging escape hatch -- they must be identical."
+    )
+
+    def series(v: str) -> tuple[str, str]:
+        major, minor, _patch = v.split(".")
+        return major, minor
+
+    assert series(py) == series(go), (
         f"lanes have drifted: python={py}, node={node}, go={go}. From 1.0.0 the "
-        f"version number is the contract version and must match across all "
-        f"three. Bump all three together, or the number stops identifying "
-        f"which catalogue a consumer has."
+        f"version number is the contract version. The Go lane may run a higher "
+        f"PATCH than the others (packaging repairs are unfixable in place -- see "
+        f"go/v2.0.0), but MAJOR.MINOR must match everywhere, or the number stops "
+        f"identifying which catalogue a consumer has."
+    )
+    assert int(go.split(".")[2]) >= int(py.split(".")[2]), (
+        f"go={go} is on a LOWER patch than python={py}. The carve-out exists so "
+        f"Go can move AHEAD to repair an immutable tag, never to lag behind."
     )
 
 

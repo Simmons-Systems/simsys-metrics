@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	simsys "github.com/Simmons-Systems/simsys-metrics/go"
+	simsys "github.com/Simmons-Systems/simsys-metrics/go/v2"
 )
 
 func main() {

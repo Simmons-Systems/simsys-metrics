@@ -10,13 +10,13 @@ for app-specific metrics.
 ## Install
 
 ```bash
-go get github.com/Simmons-Systems/simsys-metrics/go@latest
+go get github.com/Simmons-Systems/simsys-metrics/go/v2@latest
 ```
 
 Pin to a specific release:
 
 ```bash
-go get github.com/Simmons-Systems/simsys-metrics/go@v2.0.0
+go get github.com/Simmons-Systems/simsys-metrics/go/v2@v2.0.1
 ```
 
 Note: the GitHub release tag is named `go/vX.Y.Z` (per Go's
@@ -31,7 +31,7 @@ import (
     "net/http"
     "time"
 
-    simsys "github.com/Simmons-Systems/simsys-metrics/go"
+    simsys "github.com/Simmons-Systems/simsys-metrics/go/v2"
 )
 
 func main() {

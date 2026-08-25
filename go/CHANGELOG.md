@@ -9,6 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
+## [go/v2.0.1] — 2026-08-25
+
+### Fixed — BREAKING to the IMPORT PATH: the module is now `.../simsys-metrics/go/v2`
+
+`go/v2.0.0` is **unusable and superseded**. Go requires a `/vN` suffix on the
+module path for any major version ≥ 2, and `go/go.mod` still declared
+`github.com/Simmons-Systems/simsys-metrics/go`. `go get .../go@v2.0.0` fails
+outright:
+
+```
+invalid version: module contains a go.mod file, so module path must match
+major version ("github.com/Simmons-Systems/simsys-metrics/go/v2")
+```
+
+Nothing was ever served: `proxy.golang.org` returned 404 for both
+`.../go/@v/v2.0.0.info` and `.../go/v2/@v/v2.0.0.info`, so no consumer can hold
+a checksum for it. `go/v2.0.0` is left dangling rather than re-pointed — a Go
+tag is never moved, which is the same reason `go/v0.3.1` superseded `go/v0.3.0`.
+
+**Upgrading from v1.x requires an import-path edit**, which is Go's normal cost
+for a major:
+
+```go
+simsys "github.com/Simmons-Systems/simsys-metrics/go/v2"
+```
+
+```bash
+go get github.com/Simmons-Systems/simsys-metrics/go/v2@v2.0.1
+```
+
+The 2.0.0 behaviour changes are unchanged and carried forward in full — see the
+`go/v2.0.0` entry below, which describes what this release actually ships.
+
+### Why nothing caught it
+
+The release workflow builds, attests and publishes, but never *resolves* the
+module back from the proxy, and no test asserted that the module path's major
+suffix matches the version being tagged. `tests/test_go_module_path_major.py`
+now does, in the pytest lane.
+
 ## [go/v2.0.0] — 2026-08-25
 
 ### Changed — BREAKING: a failing poller no longer reports `0` (#50319)

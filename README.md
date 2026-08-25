@@ -28,7 +28,7 @@ Grafana dashboard works across every runtime:
 |---------|------|-----------|------------|---------|
 | `simsys-metrics` (Python) | `/` (root) | FastAPI, Flask | `python-v<semver>` (e.g. `python-v2.0.0`) | `pip install simsys-metrics` (PyPI) |
 | [`@simsys/metrics` (Node)](node/) | `node/` | Express 5, Bun + Hono | `node-v<semver>` (e.g. `node-v2.0.0`) | `npm install @simsys/metrics` (npm) |
-| [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v2.0.0`) | `go get ...@v2.0.0` |
+| [`simsys-metrics-go`](go/) | `go/` | net/http | `go/v<semver>` (e.g. `go/v2.0.1`) | `go get github.com/Simmons-Systems/simsys-metrics/go/v2@v2.0.1` |
 
 The Python package remains at the repo root for pip git-install compatibility. The Node and Go packages live under [`node/`](node/) and [`go/`](go/) respectively — see each subdirectory's README for install details.
 

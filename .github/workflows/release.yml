@@ -60,7 +60,7 @@ jobs:
           python -m twine check --strict dist/*
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
           files: dist/*
@@ -122,7 +122,7 @@ jobs:
           subject-path: "${{ runner.temp }}/simsys-metrics-*.tgz"
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
           files: ${{ runner.temp }}/simsys-metrics-*.tgz
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Create GitHub release
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
 
@@ -229,7 +229,7 @@ jobs:
         with:
           # Explicit pin, matching the go-ci.yml test matrix floor. The module
           # under test declares go 1.25.0, so anything older cannot build it.
-          go-version: "1.25.x"
+          go-version: "1.27.x"
 
       - name: Consume the module from proxy.golang.org
         # The script builds a throwaway module OUTSIDE this repo with GOWORK=off

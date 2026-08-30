@@ -115,6 +115,9 @@ func Install(opts InstallOpts) (*Metrics, error) {
 	if reg == nil {
 		reg = prometheus.NewRegistry()
 	}
+	// Report (do not change) a second Install naming a different Service on
+	// this Registry — the CAUTION above, made visible at runtime. #50321.
+	recordServiceIdentity(reg, opts.Service)
 	m := &Metrics{
 		service:   opts.Service,
 		registry:  reg,

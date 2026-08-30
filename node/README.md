@@ -32,6 +32,7 @@ across runtimes.
   - [Job timing](#job-timing)
   - [`safeLabel` — cardinality helper](#safelabel--cardinality-helper)
 - [Metric catalogue](#metric-catalogue)
+- [One service identity per process](#one-service-identity-per-process)
 - [Cardinality rules](#cardinality-rules)
 - [`commit` detection](#commit-detection)
 - [`/metrics` endpoint behaviour](#metrics-endpoint-behaviour)
@@ -322,6 +323,33 @@ A `$service`-templated dashboard filtering `type="heapUsed"` returns
 nothing for Python/Go services; filtering `type="vms"` returns nothing
 for Node. Either build runtime-aware panels or filter on `type="rss"` —
 the one label value common to all three runtimes.
+
+## One service identity per process
+
+**`service` is process-global. A process emits under exactly one service name,
+and `install()` is the only thing that sets it.**
+
+The per-app warnings in the Express and Hono adapters are keyed on the *app*
+object, so two installs against two different apps never reach them — while the
+baseline state lives on `globalThis.__simsysMetricsBaselineState` and
+`setService` overwrites it:
+
+```js
+install(appA, { service: "foo", version: "1.0.0" });
+install(appB, { service: "bar", version: "1.0.0" });  // different object, guard not reached
+```
+
+Everything `appA` had already started begins emitting under `"bar"`, and
+`appA`'s process metrics disappear from its own series. Dashboards that join
+`simsys_build_info` to the other `simsys_*` metrics on `service` stop matching.
+
+Since 1.0.0 this logs via `console.error` with the stable marker
+`simsys-metrics: SERVICE IDENTITY CHANGE`, naming both identities. Behaviour is
+unchanged in this release; it will throw in the next major (Redmine #50321).
+
+**If you genuinely need two identities, run two processes.** The module-level
+registry means there is no supported in-process alternative here, unlike the Go
+lane where a fresh `prometheus.Registry` is the documented escape hatch.
 
 ## Cardinality rules
 

@@ -55,6 +55,7 @@ up automatically.
   - [Flask](#flask)
   - [`safe_label` — cardinality helper](#safe_label--cardinality-helper)
 - [Metric catalogue](#metric-catalogue)
+- [One service identity per process](#one-service-identity-per-process)
 - [Cardinality rules](#cardinality-rules)
 - [`commit` detection](#commit-detection)
 - [`/metrics` endpoint behaviour](#metrics-endpoint-behaviour)
@@ -263,6 +264,40 @@ forecast_requests_total.labels(
 ```
 
 Pair with `safe_label()` to cap cardinality on any dimension a user controls.
+
+## One service identity per process
+
+**`service` is process-global. A process emits under exactly one service name,
+and `install()` is the only thing that sets it.**
+
+The idempotence guard inside `install()` is keyed on a sentinel stored *on the
+app object*, so two installs against two different apps never reach it — while
+`_SERVICE` in `simsys_metrics._baseline` is a module-level global that the
+second call overwrites:
+
+```python
+install(app_a, service="foo", version="1.0.0")
+install(app_b, service="bar", version="1.0.0")   # different object, guard not reached
+```
+
+Everything `app_a` had already started — `track_queue`, `track_pool`, job spans,
+`ProgressTracker` — begins emitting under `"bar"`, and `app_a`'s process metrics
+disappear from its own series. Dashboards that join `simsys_build_info` to the
+other `simsys_*` metrics on `service` stop matching.
+
+Since 1.0.0 this logs at **ERROR** with the stable marker
+`simsys-metrics: SERVICE IDENTITY CHANGE`, naming both identities. Behaviour is
+unchanged in this release; it will raise in the next major (Redmine #50321).
+Rolling back an install with `set_service(None)` is not an identity change and
+stays quiet.
+
+**If you genuinely need two identities, run two processes.** There is no
+supported in-process alternative: the collectors bind to
+`prometheus_client.REGISTRY` at import time, so a "fresh registry per service"
+escape hatch — which the Go lane does offer — cannot be added here without an
+API break. A per-call `service=` override was considered and rejected: it
+threads through five call sites and destroys the "install once, everything is
+labelled" premise the library exists for.
 
 ## Cardinality rules
 

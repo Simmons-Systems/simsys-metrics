@@ -128,6 +128,38 @@ A `$service`-templated dashboard filtering `type="vms"` returns nothing
 for Node services. Either build runtime-aware panels or filter on
 `type="rss"` — the one label value common to all three runtimes.
 
+## One service identity per Registry
+
+**`Service` is per-`Registry`, not per-process — and unlike the Python and Node
+lanes, that makes two identities in one process legitimate, provided each has
+its own registry.**
+
+```go
+// Supported: two identities, two registries.
+a, _ := simsys.Install(simsys.InstallOpts{Service: "alpha", Version: "1.0.0",
+    Registry: prometheus.NewRegistry()})
+b, _ := simsys.Install(simsys.InstallOpts{Service: "beta", Version: "1.0.0",
+    Registry: prometheus.NewRegistry()})
+
+// NOT supported: two identities, one registry.
+reg := prometheus.NewRegistry()
+simsys.Install(simsys.InstallOpts{Service: "alpha", Version: "1.0.0", Registry: reg})
+simsys.Install(simsys.InstallOpts{Service: "beta",  Version: "1.0.0", Registry: reg})
+```
+
+The second form does not split the two identities. `Install` is idempotent on a
+registry, so the already-registered collectors — process metrics, HTTP
+histograms, queue/job/progress — keep emitting under the **first** `Service`;
+only `simsys_build_info` gains the new value. A dashboard joining `build_info`
+to the rest on `service` then matches nothing.
+
+Since 1.0.0 that case logs `slog.Warn` with the stable marker
+`simsys-metrics: SERVICE IDENTITY CHANGE`, naming both identities, once per new
+identity per registry. Behaviour is unchanged in this release; it will return
+`ErrServiceIdentityConflict` in the next major (Redmine #50321). Installing
+twice with the *same* `Service`, and installing different services into
+*different* registries, both stay silent — those are the supported shapes.
+
 ## Prefix guard
 
 Any metric registered via `m.MakeCounter` / `m.MakeGauge` / `m.MakeHistogram` whose

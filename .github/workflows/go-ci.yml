@@ -91,13 +91,7 @@ jobs:
           # time rewriting a deliberate pin and leaving the comment describing
           # the opposite of the config; renovate.json now carries a packageRules
           # entry disabling `go` updates for this file to prevent a third.
-          # Move WITH the go/go.mod bump and the staticcheck `version:` pin
-          # below (see bounds above): 2026.2 ships a Go-1.26-built binary, and
-          # the repo at floor 1.26.0 must be analyzed by a toolchain whose
-          # export-data version it can decode. 1.27.x produced
-          # "export data version 5 is greater than maximum supported version 4"
-          # once the floor left 1.25.
-          go-version: "1.26.x"
+          go-version: "1.27.x"
           cache-dependency-path: go/go.sum
 
       - name: staticcheck

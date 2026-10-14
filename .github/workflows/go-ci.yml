@@ -22,10 +22,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      # go.mod declares `go 1.25` — pinned by github.com/prometheus/procfs
-      # v0.20+. Test on the floor + the latest minor.
+      # go.mod declares `go 1.26.0` (this PR's floor bump; was `go 1.25`,
+      # pinned by github.com/prometheus/procfs v0.20+). Test on the floor +
+      # the latest minor, per the same policy.
       matrix:
-        go-version: ["1.25.x", "1.26.x"]
+        go-version: ["1.26.x", "1.27.x"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -76,21 +77,28 @@ jobs:
           #   lower — staticcheck's own go.mod sets a minimum. 2026.2 declares
           #           `go 1.26.0`, so a 1.25 toolchain cannot even build it:
           #           "requires go >= 1.26.0 (running go 1.25.0; GOTOOLCHAIN=local)".
-          #   upper — a staticcheck release can only decode export data from the
-          #           toolchains it shipped with, so a toolchain NEWER than the
-          #           `version:` pin below fails every stdlib import with
-          #           "export data version N is greater than maximum supported version M".
+          #   upper — a staticcheck release can only decode export data it was
+          #           built knowing, so a toolchain NEWER than the `version:`
+          #           pin below fails every stdlib import with "export data
+          #           version N is greater than maximum supported version M".
+          #           For 2026.2 the ceiling is 1.26.x in practice: a 1.27
+          #           toolchain compiles lang-1.26 modules into export data
+          #           2026.2 cannot decode. Empirical, 2026-10-14: this job
+          #           with 1.27.x red (run 38585711142), with 1.26.x green
+          #           (run 38584609162), same tree.
           #
-          # Deriving this from go/go.mod (currently `go 1.25.0`) violates the
-          # lower bound and was tried — it fails. The module floor and the
-          # linter toolchain are genuinely different things.
+          # Deriving this from go/go.mod was tried and fails whenever the
+          # module floor sits below staticcheck's minimum (it was `go 1.25.0`
+          # until #133 raised it to 1.26.0). The module floor and the linter
+          # toolchain move on different cadences; the explicit pin is what
+          # keeps the coupled pair visible here.
           #
           # This pin must therefore move together with the `version:` pin below,
           # by hand. Renovate floated it twice before (33db5b2, f7f90cd), each
           # time rewriting a deliberate pin and leaving the comment describing
           # the opposite of the config; renovate.json now carries a packageRules
           # entry disabling `go` updates for this file to prevent a third.
-          go-version: "1.27.x"
+          go-version: "1.26.x"
           cache-dependency-path: go/go.sum
 
       - name: staticcheck

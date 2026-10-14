@@ -42,7 +42,7 @@ WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "go-c
 
 # The matched pair currently in the workflow. Changing either pin means
 # changing this table in the same commit -- that is the whole point.
-EXPECTED_GO_TOOLCHAIN = "1.27.x"
+EXPECTED_GO_TOOLCHAIN = "1.26.x"
 EXPECTED_STATICCHECK = "2026.2"
 
 # (minimum buildable Go minor, maximum supported Go minor) per staticcheck
@@ -51,7 +51,12 @@ EXPECTED_STATICCHECK = "2026.2"
 # a claim about both bounds -- read the release notes before adding one.
 STATICCHECK_GO_BOUNDS = {
     "2026.1": ((1, 25), (1, 26)),
-    "2026.2": ((1, 26), (1, 27)),
+    # 2026.2's ceiling is empirical, not from the release notes: the notes
+    # imply 1.27 support, but a 1.27 toolchain compiles lang-1.26 modules into
+    # export data 2026.2 cannot decode. CI 2026-10-14, same tree, go.mod floor
+    # 1.26.0: go-version 1.27.x red (run 38585711142), 1.26.x green
+    # (run 38584609162). Re-test the ceiling when bumping this release.
+    "2026.2": ((1, 26), (1, 26)),
 }
 
 
